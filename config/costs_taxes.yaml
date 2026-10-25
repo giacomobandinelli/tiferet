@@ -111,16 +111,16 @@ ter:
 ongoing_fees:
   xetra_gold:
     custody:
-      value: 0.00025
+      value: 0.003
       unit: fraction_per_year
-      source_url: https://www.xetra-gold.com/in-gold-investieren/faqs/
+      source_url: https://www.xetra-gold.com/fileadmin/user_upload/xetra/Downloads_Deutsch/Broschueren/XG-Broschuere_DE.pdf
       checked_on: 2026-10-25
-      verified: false
-      reason: >-
-        The issuer states custody fees of "0,025 Prozent", deducted monthly by Clearstream
-        Europe with the securities account fees, without naming the period the rate refers
-        to; read here as per year. Whether the fee (plus VAT) is passed on depends on the
-        investor's bank, and the reference broker's treatment was not checked.
+      verified: true
+      note: >-
+        Issuer brochure: custody fee of currently about 0.3% p.a. (0.025% of the holding per
+        calendar month) plus VAT, charged by Clearstream Europe to the custodian bank. VAT is
+        added at tax.vat_rate, for an effective 0.357% p.a. (0.00357). Whether the depot bank
+        passes the charge on depends on the broker; the full charge is assumed (decision 0007).
 
 broker:
   name:
@@ -339,14 +339,13 @@ tax:
       note: Section 19(1) sentences 3 and 4 InvStG.
     basiszins_note: >-
       Basiszins values below are those published by the Bundesministerium der Finanzen for
-      each year from 2018, when the Vorabpauschale was introduced. Earlier years, needed
-      because current law is applied to the full history (decision 0006), are derived in the
-      tax-engine task with the legal method (section 18(4) InvStG with section 203(2) BewG,
-      from Bundesbank yield data) and verified there. The current text of section 203(2) BewG
-      on gesetze-im-internet.de, checked 2026-10-25, contains only the authorisation to adjust
-      the capitalisation factor; the reference is to be confirmed in that task. The BMF
-      website blocks automated access, so each letter was read in a copy of its text at
-      source_url; the letter is identified in note.
+      each year from 2018, when the Vorabpauschale was introduced. The method is section 18(4)
+      InvStG itself: the rate the Deutsche Bundesbank computes from its yield-curve data for
+      the first trading day of each year. Earlier years, needed because current law is applied
+      to the full history (decision 0006), are derived from Bundesbank yield-curve data with
+      this method in the tax-engine task and verified there. The BMF website blocks automated
+      access, so each letter was read in a copy of its text at source_url; the letter is
+      identified in note.
     basiszins:
       2018:
         value: 0.0087
@@ -490,3 +489,10 @@ tax:
       Marginal rate of the section 32a(1) EStG tariff from 2026 for taxable income of 69,879 to
       277,825 euros. Applied without solidarity surcharge to taxable short-term private sales
       (decision 0006).
+  vat_rate:
+    value: 0.19
+    unit: fraction
+    source_url: https://www.gesetze-im-internet.de/ustg_1980/__12.html
+    checked_on: 2026-10-25
+    verified: true
+    note: Section 12(1) UStG standard rate; applied to the Xetra-Gold custody fee.

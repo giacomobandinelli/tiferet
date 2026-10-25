@@ -3,6 +3,7 @@
 import re
 from collections.abc import Iterator
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -153,6 +154,13 @@ def test_tax_classes_are_valid_and_covered(raw: dict[str, Any]) -> None:
 def test_basiszins_covers_every_published_year() -> None:
     basiszins = load_costs_taxes().tax.vorabpauschale.basiszins
     assert sorted(basiszins) == list(range(2018, 2027))
+
+
+def test_xetra_gold_custody_includes_vat() -> None:
+    config = load_config()
+    custody = config.instruments["xetra_gold"].ongoing_fees["custody"].value
+    vat = config.costs_taxes.tax.vat_rate.value
+    assert custody * (1 + vat) == Decimal("0.00357")
 
 
 def test_unverified_value_requires_reason() -> None:

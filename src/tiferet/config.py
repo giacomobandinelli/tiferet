@@ -205,6 +205,7 @@ class Tax(_Frozen):
     sec23_holding_period: Parameter[int]
     sec23_applies_to: Parameter[tuple[TaxClass, ...]]
     personal_income_tax_rate: Parameter[Decimal]
+    vat_rate: Parameter[Decimal]
 
 
 class CostsTaxes(_Frozen):

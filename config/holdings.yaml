@@ -532,9 +532,7 @@ holdings:
       source_url: https://etf.dws.com/download/asset/4d86b42f-90d6-4fe7-877d-684d71a71649
       checked_on: 2026-10-25
       verified: true
-      note: >-
-        Share class launch from the factsheet dated 2026-09-30; plan section 3.1.1 gives
-        March 2008.
+      note: Share class launch from the factsheet dated 2026-09-30.
     exposure_available_from:
       value: null
       source_url: https://github.com/giacomobandinelli/tiferet/blob/main/docs/plan.md#311-investable-history
