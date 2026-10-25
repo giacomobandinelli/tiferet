@@ -1,0 +1,498 @@
+# Cost and tax parameters (docs/plan.md sections 3.8 and 3.9, decisions 0004 and 0006).
+#
+# Every fee, including each holding's TER, and every tax parameter lives here, keyed where
+# relevant by the instrument key in config/holdings.yaml. No cost or tax constant is written
+# into code.
+#
+# Every parameter is a sourced value:
+#   value        the parameter
+#   unit         unit of value
+#   source_url   where it was checked
+#   checked_on   date of the check
+#   verified     true if the value was read on a primary source on checked_on
+#   reason       required when verified is false
+#   note         optional context
+#
+# Units: "fraction" is a plain ratio (0.0007 = 0.07%); "fraction_per_year" is a ratio per
+# year; "fraction_of_trade_value" is a ratio of the traded amount; "eur" and "usd" are
+# currency amounts; "btc" and "eth" are native coin amounts.
+
+ter:
+  btc:
+    value: 0
+    unit: fraction_per_year
+    source_url: https://github.com/giacomobandinelli/tiferet/blob/main/docs/plan.md#31-holdings
+    checked_on: 2026-10-25
+    verified: true
+    note: Held directly; trading and network fees only (see crypto).
+  eth:
+    value: 0
+    unit: fraction_per_year
+    source_url: https://github.com/giacomobandinelli/tiferet/blob/main/docs/plan.md#31-holdings
+    checked_on: 2026-10-25
+    verified: true
+    note: Held directly; trading and network fees only (see crypto).
+  nasdaq100:
+    value: 0.0030
+    unit: fraction_per_year
+    source_url: https://www.ishares.com/de/privatanleger/de/produkte/253741/
+    checked_on: 2026-10-25
+    verified: true
+  sp500:
+    value: 0.0007
+    unit: fraction_per_year
+    source_url: https://www.ishares.com/de/privatanleger/de/produkte/253743/
+    checked_on: 2026-10-25
+    verified: true
+  msci_em_imi:
+    value: 0.0018
+    unit: fraction_per_year
+    source_url: https://www.ishares.com/de/privatanleger/de/produkte/264659/
+    checked_on: 2026-10-25
+    verified: true
+  us_energy:
+    value: 0.0015
+    unit: fraction_per_year
+    source_url: https://www.ssga.com/de/de/intermediary/etfs/spdr-sp-us-energy-select-sector-ucits-etf-acc-zpde-gy
+    checked_on: 2026-10-25
+    verified: true
+    note: TER as of 2026-09-30 per the issuer page.
+  broad_commodities:
+    value: 0.0019
+    unit: fraction_per_year
+    source_url: https://live.deutsche-boerse.com/etf/wisdomtree-broad-commodities-ucits-etf-usd-acc
+    checked_on: 2026-10-25
+    verified: false
+    reason: Issuer site blocks automated access (Cloudflare); read on the Deutsche Börse listing page.
+  eur_inflation_linked:
+    value: 0.0009
+    unit: fraction_per_year
+    source_url: https://www.ishares.com/de/privatanleger/de/produkte/251739/
+    checked_on: 2026-10-25
+    verified: true
+  xetra_gold:
+    value: 0
+    unit: fraction_per_year
+    source_url: https://www.xetra-gold.com/in-gold-investieren/faqs/
+    checked_on: 2026-10-25
+    verified: true
+    note: >-
+      The issuer charges no management fee and no front-end load. The custody fee is a
+      separate entry under ongoing_fees.
+  ust_7_10_eur_hedged:
+    value: 0.0010
+    unit: fraction_per_year
+    source_url: https://www.ishares.com/de/privatanleger/de/produkte/344759/
+    checked_on: 2026-10-25
+    verified: true
+    note: Hedging costs are already reflected in the hedged share-class returns (section 3.8).
+  eur_govt_bonds:
+    value: 0.0007
+    unit: fraction_per_year
+    source_url: https://fund-docs.vanguard.com/EUR_Eurozone_Government_Bond_UCITS_ETF_EUR_Accumulating_9591_CH_RET_EN.pdf
+    checked_on: 2026-10-25
+    verified: true
+    note: Ongoing charges figure (OCF) from the factsheet dated 2026-09-30.
+  eur_overnight:
+    value: 0.0010
+    unit: fraction_per_year
+    source_url: https://etf.dws.com/download/asset/4d86b42f-90d6-4fe7-877d-684d71a71649
+    checked_on: 2026-10-25
+    verified: true
+    note: All-in fee from the factsheet dated 2026-09-30.
+  usd_tbills_0_1:
+    value: 0.0007
+    unit: fraction_per_year
+    source_url: https://www.ishares.com/de/privatanleger/de/produkte/307243/
+    checked_on: 2026-10-25
+    verified: true
+
+# Ongoing fees other than TER, by instrument key and fee name.
+ongoing_fees:
+  xetra_gold:
+    custody:
+      value: 0.003
+      unit: fraction_per_year
+      source_url: https://www.xetra-gold.com/fileadmin/user_upload/xetra/Downloads_Deutsch/Broschueren/XG-Broschuere_DE.pdf
+      checked_on: 2026-10-25
+      verified: true
+      note: >-
+        Issuer brochure: custody fee of currently about 0.3% p.a. (0.025% of the holding per
+        calendar month) plus VAT, charged by Clearstream Europe to the custodian bank. VAT is
+        added at tax.vat_rate, for an effective 0.357% p.a. (0.00357). Whether the depot bank
+        passes the charge on depends on the broker; the full charge is assumed (decision 0007).
+
+broker:
+  name:
+    value: Interactive Brokers Ireland, fixed pricing
+    unit: label
+    source_url: https://www.interactivebrokers.ie/en/pricing/commissions-stocks-europe.php
+    checked_on: 2026-10-25
+    verified: true
+    note: Reference broker of section 3.8. Schedule for Germany, IB SmartRouting.
+  commission_rate:
+    value: 0.0005
+    unit: fraction_of_trade_value
+    source_url: https://www.interactivebrokers.ie/en/pricing/commissions-stocks-europe.php
+    checked_on: 2026-10-25
+    verified: true
+    note: Applies to stocks, ETFs and ETCs; fixed pricing includes exchange, clearing and regulatory fees.
+  commission_min:
+    value: 3.00
+    unit: eur
+    source_url: https://www.interactivebrokers.ie/en/pricing/commissions-stocks-europe.php
+    checked_on: 2026-10-25
+    verified: true
+    note: Minimum per order (whole shares).
+  commission_max:
+    value: null
+    unit: eur
+    source_url: https://www.interactivebrokers.ie/en/pricing/commissions-stocks-europe.php
+    checked_on: 2026-10-25
+    verified: true
+    note: No maximum per order under fixed pricing with IB SmartRouting.
+
+crypto:
+  exchange:
+    value: Kraken Pro
+    unit: label
+    source_url: https://www.kraken.com/features/fee-schedule
+    checked_on: 2026-10-25
+    verified: true
+    note: Base-case crypto exchange for the cost model of section 3.8.
+  spot_fee_tiers:
+    value:
+      - {tier: Tier 1, min_30d_volume_usd: 0, min_assets_on_platform_usd: null, maker: 0.0040, taker: 0.0080}
+      - {tier: Tier 2, min_30d_volume_usd: 2500, min_assets_on_platform_usd: null, maker: 0.0030, taker: 0.0060}
+      - {tier: Tier 3, min_30d_volume_usd: 10000, min_assets_on_platform_usd: 20000, maker: 0.0022, taker: 0.0038}
+      - {tier: Tier 4, min_30d_volume_usd: 25000, min_assets_on_platform_usd: 50000, maker: 0.0020, taker: 0.0035}
+      - {tier: Tier 5, min_30d_volume_usd: 50000, min_assets_on_platform_usd: 100000, maker: 0.0015, taker: 0.0030}
+      - {tier: Tier 6, min_30d_volume_usd: 100000, min_assets_on_platform_usd: 200000, maker: 0.0012, taker: 0.0025}
+      - {tier: Tier 7, min_30d_volume_usd: 250000, min_assets_on_platform_usd: 400000, maker: 0.0010, taker: 0.0022}
+      - {tier: Tier 8, min_30d_volume_usd: 500000, min_assets_on_platform_usd: 600000, maker: 0.0008, taker: 0.0020}
+      - {tier: Tier 9, min_30d_volume_usd: 1000000, min_assets_on_platform_usd: 1000000, maker: 0.0006, taker: 0.0018}
+      - {tier: Tier 10, min_30d_volume_usd: 2500000, min_assets_on_platform_usd: 2500000, maker: 0.0004, taker: 0.0015}
+      - {tier: Tier 11, min_30d_volume_usd: 5000000, min_assets_on_platform_usd: 5000000, maker: 0.0002, taker: 0.0012}
+      - {tier: Tier 12, min_30d_volume_usd: 10000000, min_assets_on_platform_usd: 10000000, maker: 0.0000, taker: 0.0010}
+      - {tier: Pro 1, min_30d_volume_usd: 50000000, min_assets_on_platform_usd: 20000000, maker: 0.0000, taker: 0.0009}
+      - {tier: Pro 2, min_30d_volume_usd: 100000000, min_assets_on_platform_usd: 25000000, maker: 0.0000, taker: 0.0008}
+      - {tier: Pro 3, min_30d_volume_usd: 250000000, min_assets_on_platform_usd: 50000000, maker: 0.0000, taker: 0.0007}
+      - {tier: Pro 4, min_30d_volume_usd: 400000000, min_assets_on_platform_usd: 80000000, maker: 0.0000, taker: 0.0006}
+      - {tier: Pro 5, min_30d_volume_usd: 500000000, min_assets_on_platform_usd: 100000000, maker: 0.0000, taker: 0.0005}
+    unit: fraction_of_trade_value
+    source_url: https://www.kraken.com/features/fee-schedule
+    checked_on: 2026-10-25
+    verified: true
+    note: >-
+      Spot crypto maker-taker schedule. A tier is reached by 30-day spot volume in USD or by
+      assets on platform (AoP). Instant Buy volume does not count towards the tiers.
+  network_fees:
+    btc_withdrawal:
+      value: 0.000015
+      unit: btc
+      source_url: https://support.kraken.com/articles/360000767986-cryptocurrency-withdrawal-fees-and-minimums
+      checked_on: 2026-10-25
+      verified: true
+      note: Kraken fee to withdraw BTC on the Bitcoin network to cold storage; minimum withdrawal 0.000218 BTC including fee.
+    eth_withdrawal:
+      value: 0.00014
+      unit: eth
+      source_url: https://support.kraken.com/articles/360000767986-cryptocurrency-withdrawal-fees-and-minimums
+      checked_on: 2026-10-25
+      verified: true
+      note: Kraken fee to withdraw ETH on the Ethereum network to cold storage; minimum withdrawal 0.000168 ETH including fee.
+    btc_transfer_to_exchange:
+      value: null
+      unit: btc
+      source_url: https://support.kraken.com/articles/360000767986-cryptocurrency-withdrawal-fees-and-minimums
+      checked_on: 2026-10-25
+      verified: false
+      reason: >-
+        On-chain fee paid when sending from cold storage back to the exchange; it is set by
+        network demand at the time of the transaction and has no published schedule.
+    eth_transfer_to_exchange:
+      value: null
+      unit: eth
+      source_url: https://support.kraken.com/articles/360000767986-cryptocurrency-withdrawal-fees-and-minimums
+      checked_on: 2026-10-25
+      verified: false
+      reason: >-
+        On-chain fee paid when sending from cold storage back to the exchange; it is set by
+        network demand at the time of the transaction and has no published schedule.
+
+spread:
+  half_spread_share:
+    value: 0.5
+    unit: fraction
+    source_url: https://github.com/giacomobandinelli/tiferet/blob/main/docs/plan.md#38-costs
+    checked_on: 2026-10-25
+    verified: true
+    note: Half the estimated bid-ask spread is charged on every trade (section 3.8).
+  estimator_corwin_schultz:
+    value: Corwin and Schultz (2012), A Simple Way to Estimate Bid-Ask Spreads from Daily High and Low Prices, Journal of Finance
+    unit: reference
+    source_url: https://doi.org/10.1111/j.1540-6261.2012.01729.x
+    checked_on: 2026-10-25
+    verified: true
+  estimator_abdi_ranaldo:
+    value: Abdi and Ranaldo (2017), A Simple Estimation of Bid-Ask Spreads from Daily Close, High, and Low Prices, Review of Financial Studies
+    unit: reference
+    source_url: https://doi.org/10.1093/rfs/hhx084
+    checked_on: 2026-10-25
+    verified: true
+
+market_impact:
+  ignored_below_portfolio_value:
+    value: 1000000
+    unit: eur
+    source_url: https://github.com/giacomobandinelli/tiferet/blob/main/docs/plan.md#38-costs
+    checked_on: 2026-10-25
+    verified: true
+    note: Stated assumption of section 3.8, not a measured value.
+
+tax:
+  capital_income_tax_rate:
+    value: 0.25
+    unit: fraction
+    source_url: https://www.gesetze-im-internet.de/estg/__32d.html
+    checked_on: 2026-10-25
+    verified: true
+    note: Section 32d(1) sentence 1 EStG.
+  solidarity_surcharge_rate:
+    value: 0.055
+    unit: fraction
+    source_url: https://www.gesetze-im-internet.de/solzg_1995/__4.html
+    checked_on: 2026-10-25
+    verified: true
+    note: >-
+      Section 4 SolzG, as a fraction of the capital income tax (25% x 1.055 = 26.375%). Not
+      applied to the personal income-tax rate (decision 0006).
+  church_tax_rate:
+    value: 0
+    unit: fraction
+    source_url: https://github.com/giacomobandinelli/tiferet/blob/main/docs/plan.md#39-german-tax-engine
+    checked_on: 2026-10-25
+    verified: true
+    note: Model assumption of section 3.9 (no church tax).
+  partial_exemption:
+    equity_fund:
+      value: 0.30
+      unit: fraction
+      source_url: https://www.gesetze-im-internet.de/invstg_2018/__20.html
+      checked_on: 2026-10-25
+      verified: true
+      note: Section 20(1) sentence 1 InvStG (Aktienteilfreistellung, private investors).
+    bond_fund:
+      value: 0
+      unit: fraction
+      source_url: https://www.gesetze-im-internet.de/invstg_2018/__20.html
+      checked_on: 2026-10-25
+      verified: true
+      note: Section 20 InvStG grants partial exemptions only to equity, mixed and real-estate funds.
+    commodity_fund:
+      value: 0
+      unit: fraction
+      source_url: https://www.gesetze-im-internet.de/invstg_2018/__20.html
+      checked_on: 2026-10-25
+      verified: true
+      note: Section 20 InvStG grants partial exemptions only to equity, mixed and real-estate funds.
+    money_market_fund:
+      value: 0
+      unit: fraction
+      source_url: https://www.gesetze-im-internet.de/invstg_2018/__20.html
+      checked_on: 2026-10-25
+      verified: true
+      note: Section 20 InvStG grants partial exemptions only to equity, mixed and real-estate funds.
+  vorabpauschale:
+    basisertrag_factor:
+      value: 0.70
+      unit: fraction
+      source_url: https://www.gesetze-im-internet.de/invstg_2018/__18.html
+      checked_on: 2026-10-25
+      verified: true
+      note: >-
+        Section 18(1) InvStG: Basisertrag = redemption price at the start of the year x 70% of
+        the Basiszins, capped at the year's price increase plus distributions; the
+        Vorabpauschale is the amount by which distributions fall short of the Basisertrag.
+    purchase_year_reduction_denominator:
+      value: 12
+      unit: months
+      source_url: https://www.gesetze-im-internet.de/invstg_2018/__18.html
+      checked_on: 2026-10-25
+      verified: true
+      note: >-
+        Section 18(2) InvStG: in the year of purchase the Vorabpauschale is reduced by one
+        twelfth (1 / value) for each full month before the month of purchase.
+    deemed_received:
+      value: first working day of the following calendar year
+      unit: rule
+      source_url: https://www.gesetze-im-internet.de/invstg_2018/__18.html
+      checked_on: 2026-10-25
+      verified: true
+      note: Section 18(3) InvStG.
+    credited_against_sale_gain:
+      value: in full, regardless of any partial exemption
+      unit: rule
+      source_url: https://www.gesetze-im-internet.de/invstg_2018/__19.html
+      checked_on: 2026-10-25
+      verified: true
+      note: Section 19(1) sentences 3 and 4 InvStG.
+    basiszins_note: >-
+      Basiszins values below are those published by the Bundesministerium der Finanzen for
+      each year from 2018, when the Vorabpauschale was introduced. The method is section 18(4)
+      InvStG itself: the rate the Deutsche Bundesbank computes from its yield-curve data for
+      the first trading day of each year. Earlier years, needed because current law is applied
+      to the full history (decision 0006), are derived from Bundesbank yield-curve data with
+      this method in the tax-engine task and verified there. The BMF website blocks automated
+      access, so each letter was read in a copy of its text at source_url; the letter is
+      identified in note.
+    basiszins:
+      2018:
+        value: 0.0087
+        unit: fraction
+        source_url: https://datenbank.nwb.de/Dokument/720807/
+        checked_on: 2026-10-25
+        verified: true
+        note: BMF letter of 4 January 2018, IV C 1 - S 1980-1/14/10001 :038, BStBl 2018 I S. 249; rate as of 2 January 2018.
+      2019:
+        value: 0.0052
+        unit: fraction
+        source_url: https://www.bvl-verband.de/fileadmin/steuerpolitik/bmf-schreiben/2019/2019-01-09-basiszins-zur-berechnung-der-vorabpauschale.pdf
+        checked_on: 2026-10-25
+        verified: true
+        note: BMF letter of 9 January 2019, IV C 1 - S 1980-1/14/10001 :038, BStBl 2019 I S. 58; rate as of 2 January 2019.
+      2020:
+        value: 0.0007
+        unit: fraction
+        source_url: https://www.bvl-verband.de/fileadmin/steuerpolitik/bmf-schreiben/2020/2020-01-29-basiszins-zur-berechnung-der-vorabpauschale.pdf_jsessionid_5FDAC63EDFF38A2A3FE928CB0B85B730.delivery1-replication.pdf
+        checked_on: 2026-10-25
+        verified: true
+        note: BMF letter of 29 January 2020, IV C 1 - S 1980-1/19/10038 :001, BStBl 2020 I S. 218; rate as of 2 January 2020.
+      2021:
+        value: -0.0045
+        unit: fraction
+        source_url: https://datenbank.nwb.de/Dokument/845393/
+        checked_on: 2026-10-25
+        verified: true
+        note: >-
+          BMF letter of 6 January 2021, IV C 1 - S 1980-1/19/10038 :004, BStBl 2021 I S. 56;
+          rate as of 4 January 2021. A negative Basiszins yields no Vorabpauschale.
+      2022:
+        value: -0.0005
+        unit: fraction
+        source_url: https://www.bvl-verband.de/fileadmin/steuerpolitik/bmf-schreiben/2022/2022-01-07-basiszins-zum-3-januar-2022-zur-berechnung-der-vorabpauschale-gemaess-paragraf-18-absatz-4-InvStG.pdf
+        checked_on: 2026-10-25
+        verified: true
+        note: >-
+          BMF letter of 7 January 2022, IV C 1 - S 1980-1/19/10038 :005; rate as of
+          3 January 2022. A negative Basiszins yields no Vorabpauschale.
+      2023:
+        value: 0.0255
+        unit: fraction
+        source_url: https://datenbank.nwb.de/Dokument/1007891/
+        checked_on: 2026-10-25
+        verified: true
+        note: >-
+          BMF letter of 4 January 2023, IV C 1 - S 1980-1/19/10038 :007, BStBl 2023 I S. 178;
+          rate as of 2 January 2023. Read in an NWB report quoting the letter's text.
+      2024:
+        value: 0.0229
+        unit: fraction
+        source_url: https://datenbank.nwb.de/Dokument/1033913/
+        checked_on: 2026-10-25
+        verified: true
+        note: BMF letter of 5 January 2024, IV C 1 - S 1980-1/19/10038 :008, BStBl 2024 I S. 154; rate as of 2 January 2024.
+      2025:
+        value: 0.0253
+        unit: fraction
+        source_url: https://bepartners.pro/media/public/files/2025/01/2025-01-10_basiszins_2025.pdf
+        checked_on: 2026-10-25
+        verified: true
+        note: >-
+          BMF letter of 10 January 2025, IV C 1 - S 1980/00230/009/002, BStBl 2025 I S. 273;
+          rate as of 2 January 2025. Official URL:
+          https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Steuerarten/Investmentsteuer/2025-01-10-basiszins-vorabpauschale-zum-2-1-2025.pdf
+      2026:
+        value: 0.0320
+        unit: fraction
+        source_url: https://direkt.bvi.de/fileadmin/user_upload/letter/2026/COO.7005.100.4.13897455.pdf
+        checked_on: 2026-10-25
+        verified: true
+        note: >-
+          BMF letter of 13 January 2026, IV C 1 - S 1980/00230/012/001; rate as of
+          2 January 2026. Official URL:
+          https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Steuerarten/Investmentsteuer/2026-01-13-basiszins-berechnung-vorabpauschale.pdf
+  savers_allowance:
+    value: 1000
+    unit: eur
+    source_url: https://www.gesetze-im-internet.de/estg/__20.html
+    checked_on: 2026-10-25
+    verified: true
+    note: Section 20(9) sentence 1 EStG (Sparer-Pauschbetrag, single assessment).
+  loss_pots:
+    capital_income:
+      value: {offsets_only: capital_income, carry_back_years: 0, carry_forward_years: null}
+      unit: rule
+      source_url: https://www.gesetze-im-internet.de/estg/__20.html
+      checked_on: 2026-10-25
+      verified: true
+      note: >-
+        Section 20(6) sentences 1 and 2 EStG: losses from capital income may not offset other
+        income types and reduce capital income of later years without limit (null = no limit);
+        no carry-back. Fund units are not shares, so the separate share-loss pot of sentence 4
+        does not apply to the holdings.
+    private_sales:
+      value: {offsets_only: private_sales, carry_back_years: 1, carry_forward_years: null}
+      unit: rule
+      source_url: https://www.gesetze-im-internet.de/estg/__23.html
+      checked_on: 2026-10-25
+      verified: true
+      note: >-
+        Section 23(3) sentences 7 and 8 EStG: losses from private sales offset only gains from
+        private sales of the same year, then those of the immediately preceding year or of
+        later years under section 10d (null = no limit). Applies to crypto and Xetra-Gold.
+  sec23_exemption_threshold:
+    value: 1000
+    unit: eur
+    source_url: https://www.gesetze-im-internet.de/estg/__23.html
+    checked_on: 2026-10-25
+    verified: true
+    note: >-
+      Section 23(3) sentence 5 EStG: gains stay tax-free if total private-sale gains in the
+      calendar year are less than 1,000 euros; otherwise they are taxable in full (Freigrenze).
+  sec23_holding_period:
+    value: 12
+    unit: months
+    source_url: https://www.gesetze-im-internet.de/estg/__23.html
+    checked_on: 2026-10-25
+    verified: true
+    note: >-
+      Section 23(1) sentence 1 no. 2 EStG: a sale is taxable if no more than one year passes
+      between purchase and sale. The ten-year period of sentence 4 (assets used to earn
+      income, such as staked coins) does not apply because the holdings are not staked or lent.
+  sec23_applies_to:
+    value: [crypto, physical_gold_etc]
+    unit: tax_classes
+    source_url: https://www.xetra-gold.com/in-gold-investieren/faqs/
+    checked_on: 2026-10-25
+    verified: true
+    note: >-
+      Directly held crypto falls under section 23(1) sentence 1 no. 2 EStG. Xetra-Gold is taxed
+      like physical gold (BFH VIII R 4/15 and VIII R 35/14 of 12 May 2015, as cited by the issuer).
+  personal_income_tax_rate:
+    value: 0.42
+    unit: fraction
+    source_url: https://www.gesetze-im-internet.de/estg/__32a.html
+    checked_on: 2026-10-25
+    verified: true
+    note: >-
+      Marginal rate of the section 32a(1) EStG tariff from 2026 for taxable income of 69,879 to
+      277,825 euros. Applied without solidarity surcharge to taxable short-term private sales
+      (decision 0006).
+  vat_rate:
+    value: 0.19
+    unit: fraction
+    source_url: https://www.gesetze-im-internet.de/ustg_1980/__12.html
+    checked_on: 2026-10-25
+    verified: true
+    note: Section 12(1) UStG standard rate; applied to the Xetra-Gold custody fee.

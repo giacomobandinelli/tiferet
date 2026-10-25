@@ -58,7 +58,7 @@ Thirteen holdings, all purchasable by a German retail investor (UCITS ETFs and E
 | Late cycle | SPDR S&P US Energy Select Sector UCITS ETF (Acc) | IE00BWBXM492 | 0.15% |
 | Inflation | WisdomTree Broad Commodities UCITS ETF | IE00BKY4W127 | 0.19% |
 | Inflation, bonds | iShares € Inflation Linked Govt Bond UCITS ETF (Acc) | IE00B0M62X26 | 0.09% |
-| Crash and inflation | Xetra-Gold | DE000A0S9GB0 | none |
+| Crash and inflation | Xetra-Gold | DE000A0S9GB0 | custody fee 0.3% p.a. plus VAT |
 | Crash, bonds | iShares $ Treasury Bond 7-10yr UCITS ETF EUR Hedged (Acc) | IE000K1VI152 | 0.10% |
 | Crash, bonds | Vanguard EUR Eurozone Government Bond UCITS ETF (Acc) | IE00BH04GL39 | 0.07% |
 | Cash | Xtrackers II EUR Overnight Rate Swap UCITS ETF 1C | LU0290358497 | 0.10% |
@@ -89,7 +89,7 @@ A holding may be held in the backtest only from the date its exposure was availa
 | Xetra-Gold | Dec 2007 | always, as physical gold |
 | US Treasury 7–10y, EUR-hedged | 25 Jul 2025 (share class) | earlier share classes of the same fund; hedging cost modelled from the US–euro short-rate gap |
 | Euro government bonds | 19 Feb 2019 | ~2003 via ETFs; government bonds directly before |
-| EUR overnight rate | Mar 2008 | always, via money-market funds |
+| EUR overnight rate | 25 May 2007 | always, via money-market funds |
 | USD T-bills 0–1y | 20 Feb 2019 | always, via money-market funds or direct T-bills |
 
 Approximate dates are confirmed source by source in `config/holdings.yaml` (`exposure_available_from`, with source) when the instrument registry is built. Results are reported for the full backtest and from 2010, when every core fund except the newest share classes existed.
