@@ -1,0 +1,67 @@
+[project]
+name = "tiferet"
+version = "0.1.0"
+description = "Research platform for a tax-aware, downside-controlled portfolio for a euro-based investor."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "duckdb==2.0.0",
+    "numpy==2.5.4",
+    "pandas==3.1.0",
+    "pandera==0.35.0",
+    "pyarrow==26.0.0",
+    "pydantic==2.14.1",
+    "python-dotenv==1.2.4",
+    "pyyaml==6.0.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tiferet"]
+
+[dependency-groups]
+dev = [
+    "hypothesis==6.170.9",
+    "mypy==2.4.0",
+    "pre-commit==4.7.0",
+    "pytest==9.1.1",
+    "ruff==0.17.2",
+    "types-pyyaml==6.0.12.20260906",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "SIM", # flake8-simplify
+    "C4",  # flake8-comprehensions
+    "RUF", # ruff-specific rules
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["tiferet"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config"]
+markers = [
+    "slow: long-running tests, excluded from the fast suite with -m \"not slow\"",
+]

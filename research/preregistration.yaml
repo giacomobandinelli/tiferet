@@ -1,0 +1,61 @@
+# Pre-registration (docs/plan.md sections 1, 3.4, 3.6, 3.7, 3.11 and 4).
+#
+# The owner writes this file. It is committed and tagged before any backtest runs,
+# and is not edited after tagging. Agents may create only this template.
+# Values already fixed by docs/plan.md are filled in; all other fields are left empty.
+
+objective:
+  benchmark:
+    name: iShares Core S&P 500 UCITS ETF (Acc)
+    isin: IE00B5BMR087
+  currency: EUR
+  hard_requirements:  # measured in EUR after all costs and taxes (section 1)
+    - CAGR equal to or higher than the benchmark's
+    - Sortino ratio higher than the benchmark's
+
+reported_metrics:  # reported alongside, not pass/fail (section 1)
+  - maximum drawdown
+  - downside deviation
+  - Sharpe ratio
+  - CVaR
+  - results per decade
+  - results per crisis
+  - turnover
+  - costs paid
+  - taxes paid
+  - deflated Sharpe ratio
+  - probability of backtest overfitting
+  - 10-month moving-average rule (Faber, 2007) as reference strategy
+
+data_split:  # section 4
+  development_start:
+  development_end: 2022-12-31
+  holdout_start: 2023-01-01
+
+rebalancing_variants:  # section 3.7
+  frequencies:
+    - monthly
+    - quarterly
+    - yearly
+  risk_checker_variants:
+    - daily
+    - none
+
+search_space:  # section 3.6
+  cycle_phase_thresholds:
+  momentum_lookbacks:
+  rung_weight_caps:
+  rebalancing_bands:
+  rebalancing_frequency:
+  volatility_target:
+
+ml_families:  # section 3.11; one entry per strategy family
+  - name:
+    search_budget:
+
+hypotheses:  # one entry per pre-registered hypothesis
+  - name:
+    rationale:
+    expected_direction:
+    horizon:
+    data_series:
