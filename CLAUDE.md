@@ -95,6 +95,21 @@ Every run ends with a change receipt in the pull-request description, or in the 
 
 Backtest runs also write their receipt to the trial ledger. (§8.5)
 
+## Hooks and permissions
+
+`.claude/settings.json` registers four standard-library Python hooks from `.claude/hooks/`, each started with `uv run python` (§8.2). Tests for them are in `tests/hooks/`.
+
+| Hook | Event | Behaviour |
+| --- | --- | --- |
+| `vault_guard.py` | PreToolUse (Read, Grep, Glob, Bash) | Blocks paths, wildcards and commands that reach `data/holdout` or the R2 holdout prefix, walk all of `data/`, or mention the unseal flag; any case, slash direction, `..` or symlink |
+| `prereg_guard.py` | PreToolUse (Edit, Write, MultiEdit, NotebookEdit, Bash) | Blocks changes to `research/preregistration.yaml` and to existing files in `tests/locked/`; allows creating a new draft there with Write, and read-only Bash commands |
+| `lint_on_edit.py` | PostToolUse (Edit, Write, MultiEdit) | Runs `ruff format` and `ruff check --fix` on the changed Python file and reports what remains; never blocks |
+| `test_gate.py` | Stop | Blocks stopping while `uv run pytest -m "not slow" -q` fails; allows it when `stop_hook_active` is set |
+
+`permissions.deny` refuses pushes to `main` and force pushes (agents push their own branches for pull requests), edits to the pre-registration, and reads of `data/holdout`.
+
+Hooks and permission rules apply to local sessions only. The binding protections live in code and CI: the point-in-time loader's holdout refusal, the locked tests, the CI check on tagged protected files, and the holdout's encryption (§8.2). Because the vault guard matches words, a Bash command that merely mentions `holdout` as a word, such as a commit message, is also blocked; use the Grep tool to search for the word.
+
 ## Models and effort
 
 | Task | Model | Effort |
