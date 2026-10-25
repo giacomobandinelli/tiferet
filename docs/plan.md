@@ -251,7 +251,7 @@ When many strategies are tested on the same history, some look good by chance: t
 | --- | --- |
 | Pre-registration | `research/preregistration.yaml` states the objective, metrics, thresholds and variants before any backtest. The owner writes it; agents may create only an empty template. It is committed and tagged, and a hook blocks agents from editing it. |
 | Trial ledger | Every backtest is appended automatically to `research/ledger.parquet`: strategy, parameters, data window, git commit, results. Deflated Sharpe and probability of backtest overfitting use the real trial count. Rejected strategies are published on the Research log page. |
-| Holdout vault | Development data ends on 31 December 2022. Data from 1 January 2023 onward is the holdout. It is stored in R2 under a separate, encrypted prefix; `data/holdout/` is its local equivalent and is gitignored. In research mode the point-in-time loader refuses any date after 2022-12-31 unless an explicit unseal flag is set, a locked test fails if a development run touches holdout data, and agent hooks block reads of it. It is unsealed once per release by a script that logs the event. |
+| Holdout vault | Development data ends on 31 December 2022. Data from 1 January 2023 onward is the holdout. It is stored in R2 under a separate, encrypted prefix; `data/holdout/` is its local equivalent and is gitignored. In research mode the point-in-time loader refuses any date after 2022-12-31 unless an explicit unseal flag (`TIFERET_UNSEAL_HOLDOUT`, decision 0008) is set, a locked test fails if a development run touches holdout data, and agent hooks block reads of it. It is unsealed once per release by a script that logs the event. |
 | Live record | From launch, each month's target weights are committed with a timestamp before the month starts, so the live record cannot be backfilled. |
 
 **Research and production modes** (decision 0002). Code that reads data runs in one of two modes:
@@ -393,7 +393,7 @@ The codebase is built with Claude Code. Agents run only when started by a develo
 
 ### 8.2 Hooks
 
-All hooks are Python scripts, so they behave the same on Windows and on Linux runners.
+All hooks are Python scripts, so they behave the same on Windows and on Linux runners. They are registered in exec form (`uv` with an argument list), so no shell interprets them, in Git Bash, PowerShell or `sh`.
 
 | Hook | Event | Behaviour |
 | --- | --- | --- |
@@ -402,7 +402,7 @@ All hooks are Python scripts, so they behave the same on Windows and on Linux ru
 | `lint_on_edit.py` | PostToolUse (Edit, Write) | Runs `ruff format` and `ruff check --fix` on the changed file |
 | `test_gate.py` | Stop | Runs the fast test suite (`pytest -m "not slow"`) and blocks completion while tests fail; checks `stop_hook_active` to avoid loops |
 
-**Rules are enforced in code first, agent configuration second.** Hooks and `permissions.deny` rules in `.claude/settings.json` (for example denying `git push` and edits to the pre-registration) apply to local sessions only; cloud sessions do not apply them. The binding protections therefore live in the codebase and CI, where they hold for every session and contributor:
+**Rules are enforced in code first, agent configuration second.** Hooks and `permissions.deny` rules in `.claude/settings.json` (for example denying pushes to `main` and edits to the pre-registration) apply in every session that loads the project settings, local and cloud. They can still be bypassed: by a command they do not recognise, by a session that does not load the project settings, or by a contributor working outside Claude Code. The binding protections therefore live in the codebase and CI, where they hold for every session and contributor:
 
 - the point-in-time loader's holdout refusal and the locked no-look-ahead test;
 - a CI check that fails if `research/preregistration.yaml` or `tests/locked/` change after their tagged commit;

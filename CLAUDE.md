@@ -4,10 +4,10 @@ Rules for agents working in this repository. The specification is [docs/plan.md]
 
 ## Invariants
 
-These hold for every task. Hooks enforce some of them in local sessions only; the binding protections live in the code and CI (§8.2).
+These hold for every task. Hooks enforce some of them in every session that loads the project settings, local and cloud; hooks can be bypassed, so the binding protections live in the code and CI (§8.2).
 
 1. **Point-in-time data only.** Every silver table carries a `known_at` column. Python reads data only through `pit.get(series, as_of=date)` in `src/tiferet/data/pit.py`; SQL features and dbt gold models filter on `known_at <= as_of`. Only raw ingestion by the adapters in `src/tiferet/data/` is exempt. Any other direct read of raw files is a bug. (§8.1, §10.1, 0003, 0005)
-2. **The holdout is never read.** Data from 2023-01-01 onward is the holdout, stored under a separate encrypted prefix in R2, with `data/holdout/` as its local equivalent. Never read, list or search either, and never set the unseal flag. (§4, §8.1, 0002)
+2. **The holdout is never read.** Data from 2023-01-01 onward is the holdout, stored under a separate encrypted prefix in R2, with `data/holdout/` as its local equivalent. Never read, list or search either, and never set the unseal flag `TIFERET_UNSEAL_HOLDOUT`. (§4, §8.1, 0002, 0008)
    - **Research mode** (backtests, optimization, model selection) refuses any date after 2022-12-31 unless the unseal flag is set.
    - **Production mode** (nightly ingestion, data-quality pages and, after the phase 5 freeze, the live weights) may read current data. Before the freeze, post-2022 data is only ingested and stored, never used by any model or backtest.
 3. **Protected files are not edited.** The owner writes `research/preregistration.yaml`; agents may create only an empty template of it. Agents may draft new tests in `tests/locked/`, which the owner approves before they are tagged. After tagging, no one edits either. (§4, §8.1)
@@ -94,6 +94,21 @@ Every run ends with a change receipt in the pull-request description, or in the 
 - Approvals needed
 
 Backtest runs also write their receipt to the trial ledger. (§8.5)
+
+## Hooks and permissions
+
+`.claude/settings.json` registers four standard-library Python hooks from `.claude/hooks/`, each started with `uv run python` in exec form (`"command": "uv"` with an `args` list). Claude Code substitutes `${CLAUDE_PROJECT_DIR}` itself and no shell is involved, so the hooks run the same under Git Bash, PowerShell and `sh` (§8.2). Tests for them are in `tests/hooks/`.
+
+| Hook | Event | Behaviour |
+| --- | --- | --- |
+| `vault_guard.py` | PreToolUse (Read, Grep, Glob, Bash) | Blocks paths, wildcards and commands that reach `data/holdout` or the R2 holdout prefix (`s3://`, `r2:`), or walk all of `data/`, in any case, slash direction, `..` or symlink; blocks commands that set, export or pass `TIFERET_UNSEAL_HOLDOUT` |
+| `prereg_guard.py` | PreToolUse (Edit, Write, MultiEdit, NotebookEdit, Bash) | Blocks changes to `research/preregistration.yaml` and to existing files in `tests/locked/`; allows creating a new draft there with Write, and read-only Bash commands |
+| `lint_on_edit.py` | PostToolUse (Edit, Write, MultiEdit) | Runs `ruff format` and `ruff check --fix` on the changed Python file and reports what remains; never blocks |
+| `test_gate.py` | Stop | Blocks stopping while `uv run pytest -m "not slow" -q` fails; allows it when `stop_hook_active` is set |
+
+`permissions.deny` refuses pushes to `main` and force pushes (agents push their own branches for pull requests), edits to the pre-registration, and reads of `data/holdout`.
+
+Hooks and permission rules apply in every session that loads the project settings, local and cloud. Hooks can be bypassed, so the binding protections are still the code and CI checks: the point-in-time loader's holdout refusal, the locked tests, the CI check on tagged protected files, and the holdout's encryption (§8.2). The vault guard blocks access, not words: commit messages, test names and searches for `holdout`, `unseal` or the flag's name are allowed (0008). The pre-registration guard blocks a Bash command that names a protected file and also writes anything, so keep such commands separate from writes such as `git push`.
 
 ## Models and effort
 
