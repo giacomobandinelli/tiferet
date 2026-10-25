@@ -63,6 +63,12 @@ def test_deny_rules_are_present(rule: str) -> None:
     assert rule in settings()["permissions"]["deny"]
 
 
+def test_attribution_is_disabled() -> None:
+    # Empty strings and a false sessionUrl, rather than `false` for the whole key, so that
+    # Claude Code versions before v2.1.281 still load the file.
+    assert settings()["attribution"] == {"commit": "", "pr": "", "sessionUrl": False}
+
+
 def test_feature_branch_pushes_are_not_denied() -> None:
     deny = settings()["permissions"]["deny"]
     assert "Bash(git push *)" not in deny
