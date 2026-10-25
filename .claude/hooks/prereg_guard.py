@@ -15,9 +15,9 @@ BlockedError calls exit with code 2 and the reason on stderr. Paths are resolved
 session's working directory, `cd` is followed, symlinks are resolved, and comparison ignores
 case and slash direction.
 
-The hook applies to local sessions only. The binding protection is the CI check that fails
-if either target changes after its tagged commit (§8.2). The hook uses only the standard
-library.
+The hook applies to every session that loads the project settings, local and cloud. Hooks
+can be bypassed, so the binding protection is the CI check that fails if either target
+changes after its tagged commit (§8.2). The hook uses only the standard library.
 """
 
 from __future__ import annotations
