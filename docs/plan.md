@@ -471,6 +471,7 @@ tiferet/
     preregistration.yaml   # hook-protected
     ledger.parquet         # every backtest
     referee/               # one report per published result
+    strategies/            # strategy definitions, edited by the optimizer (decision 0009)
   src/tiferet/
     data/                  # one adapter per source; point-in-time accessor in pit.py
     features/              # feature library (SQL in DuckDB + Python)

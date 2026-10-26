@@ -1,12 +1,18 @@
 """readonly_bash.py allows only allowlisted, non-writing Bash commands (plan §8.3; 0009)."""
 
+import os
+import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from hooks.hookrun import run_hook, tool_payload
+from hooks.hookrun import HOOKS_DIR, run_hook, tool_payload
 
 HOOK = "readonly_bash.py"
+REPO_ROOT = HOOKS_DIR.parents[1]
+RUFF_CONFIG_NAMES = {"pyproject.toml", "ruff.toml", ".ruff.toml"}
+SKIPPED_DIRS = {".git", ".venv", "node_modules", "__pycache__", "data", "notes"}
 
 
 def bash(project: Path, command: str) -> int:
@@ -145,3 +151,26 @@ def test_unreadable_input_is_blocked(project: Path, stdin: str) -> None:
     result = run_hook(HOOK, stdin, project=project)
     assert result.returncode == 2
     assert "could not check" in result.stderr
+
+
+def ruff_configs() -> list[Path]:
+    found = []
+    for directory, subdirs, files in os.walk(REPO_ROOT):
+        subdirs[:] = [d for d in subdirs if d not in SKIPPED_DIRS]
+        found += [Path(directory) / name for name in files if name in RUFF_CONFIG_NAMES]
+    return found
+
+
+def test_ruff_never_fixes_by_default() -> None:
+    # The allowlist lets `uv run ruff check` through only because it does not write files.
+    # A `fix = true` in any ruff configuration would turn it into a write (decision 0009).
+    configs = ruff_configs()
+    assert REPO_ROOT / "pyproject.toml" in configs
+    for path in configs:
+        settings: dict[str, Any] = tomllib.loads(path.read_text(encoding="utf-8"))
+        ruff = (
+            settings.get("tool", {}).get("ruff", {}) if path.name == "pyproject.toml" else settings
+        )
+        for key in ("fix", "unsafe-fixes"):
+            assert ruff.get(key) is not True, f"{path} sets ruff {key} = true"
+            assert ruff.get("lint", {}).get(key) is not True, f"{path} sets ruff lint.{key} = true"

@@ -28,7 +28,12 @@ EXPECTED: dict[str, tuple[str, str, list[str], dict[tuple[str, str | None], str]
         },
     ),
     "quant-referee": ("opus", "high", READ_ONLY, {("PreToolUse", "Bash"): "readonly_bash.py"}),
-    "tax-auditor": ("opus", "high", READ_ONLY, {("PreToolUse", "Bash"): "readonly_bash.py"}),
+    "tax-auditor": (
+        "opus",
+        "high",
+        [*READ_ONLY, "WebFetch"],
+        {("PreToolUse", "Bash"): "readonly_bash.py"},
+    ),
     "data-auditor": ("haiku", "low", READ_ONLY, {("PreToolUse", "Bash"): "readonly_bash.py"}),
     "fixer": ("sonnet", "medium", EDIT, {("Stop", None): "test_gate.py"}),
 }
@@ -84,7 +89,10 @@ def test_hooks_are_pinned_and_use_exec_form(name: str) -> None:
         assert (HOOKS_DIR / script).is_file()
 
 
-@pytest.mark.parametrize("name", [n for n, spec in EXPECTED.items() if spec[2] == READ_ONLY])
+REVIEWERS = ["quant-referee", "tax-auditor", "data-auditor"]
+
+
+@pytest.mark.parametrize("name", REVIEWERS)
 def test_reviewers_cannot_edit(name: str) -> None:
     meta, _ = parse(name)
     tools = {tool.strip() for tool in meta["tools"].split(",")}
@@ -101,8 +109,14 @@ def test_body_states_the_shared_rules(name: str) -> None:
     assert "CLAUDE.md" in body
 
 
-@pytest.mark.parametrize("name", ["quant-referee", "tax-auditor", "data-auditor"])
+@pytest.mark.parametrize("name", REVIEWERS)
 def test_reviewers_return_a_verdict_with_numbered_findings(name: str) -> None:
     _, body = parse(name)
     assert "Verdict: accept | reject" in body
     assert "\n1. " in body
+
+
+def test_tax_auditor_reports_unfetchable_sources_with_the_url() -> None:
+    _, body = parse("tax-auditor")
+    assert "WebFetch" in body
+    assert '"not verified against source" with the URL tried' in body

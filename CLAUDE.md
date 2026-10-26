@@ -121,7 +121,7 @@ Six project subagents live in `.claude/agents/` (§8.3, §8.6). Their frontmatte
 | `builder` | sonnet, medium | Edit, Write, Bash, read tools | `test_gate.py` on stop | Implements an agreed plan only; ends with a change receipt |
 | `optimizer` | opus, high | Edit, Write, Bash, read tools | `research_scope.py`, `readonly_bash.py`, `test_gate.py` on stop | Strategies inside the pre-registered space, development data only, every backtest through `run_backtest()`; edits only `src/tiferet/research/` and `research/strategies/` |
 | `quant-referee` | opus, high | Read, Grep, Glob, Bash | `readonly_bash.py` | Tries to break a result with the `REVIEW.md` rubric; accept or reject with numbered findings |
-| `tax-auditor` | opus, high | Read, Grep, Glob, Bash | `readonly_bash.py` | Checks each tax rule against its source in `config/costs_taxes.yaml` and worked examples |
+| `tax-auditor` | opus, high | Read, Grep, Glob, Bash, WebFetch | `readonly_bash.py` | Checks each tax rule against its fetched source in `config/costs_taxes.yaml` and worked examples; an unfetchable source is "not verified against source" with the URL tried |
 | `data-auditor` | haiku, low | Read, Grep, Glob, Bash | `readonly_bash.py` | Checks gaps, outliers, units, publication dates and `known_at` |
 | `fixer` | sonnet, medium | Edit, Write, Bash, read tools | `test_gate.py` on stop | Applies numbered findings one by one; reports each as fixed or not fixed with the reason |
 
