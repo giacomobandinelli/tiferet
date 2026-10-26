@@ -1,0 +1,3 @@
+# Every locked/<name>-v<n> tag that must exist. Add a line when the owner creates a tag; never remove one.
+# Checked by scripts/check_protected.py (decisions 0011 and 0012).
+locked/no-look-ahead-v1
