@@ -61,12 +61,18 @@ In research mode, an `as_of` later than 2022-12-31 23:59:59 Europe/Berlin raises
 - The last decision date of a view is the business day of its `as_of`. So `evaluate(feature, views)`, the value at the last decision date, is the value known at `as_of`.
 - Features live in a registry in `src/tiferet/features/registry.py`. Importing `tiferet.features` registers them all.
 
-**Locked test.** `tests/locked/test_no_look_ahead.py` iterates the registry. It generates synthetic inputs for each declared spec, with publication lags that cross at least one day boundary, and runs every check once per input:
+**Locked test.** `tests/locked/test_no_look_ahead_registry.py`, with its harness `tests/locked/look_ahead_harness.py`, iterates the registry. It generates synthetic inputs for each declared spec, with publication lags that cross at least one day boundary, and runs every check once per input:
 
-- A spike in that input changes nothing before the spike's `known_at`, on the point-in-time path and on a single full-history computation.
-- Hypothesis checks that the full-history value at random cut dates equals the value computed from history truncated by `pit.get` at the cut.
+- A spike in that input changes nothing before the spike's `known_at`, on the point-in-time path and on a single full-history computation. The spike must also change the feature afterwards, and the feature must have values before it, so a feature that never moves or is always NaN cannot pass by comparing NaN with NaN.
+- Hypothesis checks that the full-history value at random cut dates equals the value computed from history truncated at the cut by the point-in-time reader: `pit.get` for Python features, `pit_sql.inputs` for SQL features.
 - A revised value is invisible before its revision `known_at` and visible from then on.
-- Two leaky features defined inside the test must be caught: a centred moving average, and a mixed-frequency feature that aligns its monthly input by `obs_date`. This proves the test can fail.
+- Leaky code defined inside the test must be caught, which proves every check can fail:
+  - a centred moving average;
+  - a mixed-frequency Python feature that aligns its monthly input by `obs_date`;
+  - a SQL feature that aligns by `obs_date`;
+  - a reader that ignores `known_at`.
+
+The registry must hold at least one multi-input feature in Python and one in SQL (`real_price` and `sql_real_price`).
 
 The test covers features only. Label leakage and purged walk-forward splits are tested separately when the cycle-phase model is built (§3.4).
 

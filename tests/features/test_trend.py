@@ -5,6 +5,7 @@ import math
 import duckdb
 import numpy as np
 import pandas as pd
+import pytest
 
 import tiferet.features  # noqa: F401  (importing the package fills the registry)
 from tiferet.data.schema import validate_silver
@@ -68,16 +69,27 @@ def test_real_price_uses_cpi_only_once_published() -> None:
     assert math.isnan(result[pd.Timestamp("2020-01-13")])
 
 
-def test_sql_sma_200_matches_python() -> None:
-    walk = 100 * np.exp(np.cumsum(np.random.default_rng(7).normal(0, 0.01, len(DATES))))
-    price = silver("price", DATES, CLOSE, walk)
-    con = duckdb.connect()
-    con.register("price_frame", price)
-    relation = con.sql(
-        "SELECT 'price' AS input, obs_date::DATE AS obs_date, known_at, value,"
-        f" TIMESTAMPTZ '{AS_OF.isoformat()}' AS as_of FROM price_frame"
+def sql_inputs(con: duckdb.DuckDBPyConnection, *frames: pd.DataFrame) -> duckdb.DuckDBPyRelation:
+    con.register("frames", pd.concat(frames, ignore_index=True))
+    return con.sql(
+        "SELECT series_id AS input, obs_date::DATE AS obs_date, known_at, value,"
+        f" TIMESTAMPTZ '{AS_OF.isoformat()}' AS as_of FROM frames"
     )
-    sql = registry.compute_sql(registry.sql_features()["sql_sma_200"], relation)
-    python = run("sma_200", price)
-    pd.testing.assert_series_equal(sql, python, check_names=False, check_freq=False, rtol=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("sql_name", "python_name", "multi"),
+    [("sql_sma_200", "sma_200", False), ("sql_real_price", "real_price", True)],
+)
+def test_sql_features_match_python(sql_name: str, python_name: str, multi: bool) -> None:
+    walk = 100 * np.exp(np.cumsum(np.random.default_rng(7).normal(0, 0.01, len(DATES))))
+    frames = (
+        (silver("price", DATES, CLOSE, walk), CPI)
+        if multi
+        else (silver("price", DATES, CLOSE, walk),)
+    )
+    con = duckdb.connect()
+    sql = registry.compute_sql(registry.sql_features()[sql_name], sql_inputs(con, *frames))
     con.close()
+    python = run(python_name, *frames)
+    pd.testing.assert_series_equal(sql, python, check_names=False, check_freq=False, rtol=1e-12)
