@@ -28,13 +28,13 @@ def _run(inputs: duckdb.DuckDBPyRelation, query: str, name: str) -> duckdb.DuckD
     return result
 
 
-@register_sql("sql_sma_200", PRICE)
+@register_sql("sql_sma_200", PRICE.with_warmup(SMA_WINDOW))
 def sql_sma_200(inputs: duckdb.DuckDBPyRelation) -> duckdb.DuckDBPyRelation:
     """Trailing simple moving average of the price over 200 observations."""
     return _run(inputs, aligned_query(_SMA), "sql_sma_200")
 
 
-@register_sql("sql_real_price", PRICE, CPI)
+@register_sql("sql_real_price", PRICE.with_warmup(1), CPI.with_warmup(1))
 def sql_real_price(inputs: duckdb.DuckDBPyRelation) -> duckdb.DuckDBPyRelation:
     """Daily price divided by the monthly CPI, each CPI value used only once it was known."""
     return _run(inputs, _REAL_PRICE, "sql_real_price")

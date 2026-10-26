@@ -1,23 +1,29 @@
-"""No feature reacts to data before it was known (plan §10.1; decisions 0003, 0010).
+"""No feature reacts to data before it was known (plan §10.1; decisions 0003, 0010, 0011).
 
 Protected test: once tagged it is not edited. It iterates the feature registry, so a feature
 registered later is covered without changing this file. Every Python and SQL feature is run
-on synthetic inputs built from its declared input specs, once per input:
+on synthetic inputs built from its declared input specs, with as much history as each input's
+declared warm-up needs, once per input:
 
-- a spike in that input changes nothing before the spike's `known_at`, on the point-in-time
-  path and on a single full-history computation, and does change the feature afterwards, so
-  the comparison is not between values that never move;
+- a one-day spike in that input changes nothing before the spike's `known_at`, on the
+  point-in-time path and on a single full-history computation;
+- lasting level shifts from the same `known_at` on, multiplicative and additive in both
+  directions, change nothing before it on the full-history computation;
+- the spike or one of the shifts does change the feature from then on, and the feature has
+  values before it, so a feature that never moves or is always NaN fails;
 - the full-history value at a cut date equals the value computed from history truncated at
   the cut by the point-in-time reader (`pit.get` or `pit_sql.inputs`);
 - a revised value is not visible before the revision's `known_at`, and is from then on.
 
-Leaky features and a leaky reader defined here, in Python and SQL, must be caught, which
-proves every check can fail. The harness lives in `look_ahead_harness.py`.
+Leaky features, a leaky reader and features that never move, defined here in Python and SQL,
+must be caught, which proves every check can fail. The harness lives in
+`look_ahead_harness.py`.
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 
 import duckdb
+import numpy as np
 import pandas as pd
 import pytest
 from hypothesis import given, settings
@@ -30,12 +36,14 @@ from locked.look_ahead_harness import (
     Target,
     base,
     base_full,
+    has_value_before,
+    leaks_full,
     python_target,
+    reacts,
+    responses,
     revise,
     revision_leaks,
-    spike_leaks_full,
     spike_leaks_pit,
-    spike_reactions,
     spiked,
     sql_target,
     truncation_leaks,
@@ -49,33 +57,36 @@ from tiferet.features.view import (
     PitSeries,
     align,
     decision_dates,
-    decision_time,
 )
 
 TARGETS = [python_target(f) for f in registry.python_features().values()]
 TARGETS += [sql_target(f) for f in registry.sql_features().values()]
 CASES = [pytest.param(t, spec, id=f"{t.name}-{spec.role}") for t in TARGETS for spec in t.inputs]
+LONG_WARMUP = 504  # a 2-year window of daily observations
 
 
 def teardown_module() -> None:
     CON.close()
 
 
-def test_registry_covers_python_sql_and_multi_input_features() -> None:
+def test_registry_covers_python_sql_multi_input_and_long_window_features() -> None:
     assert any(len(f.inputs) > 1 for f in registry.python_features().values())
     assert any(len(f.inputs) > 1 for f in registry.sql_features().values())
+    warmups = [registry.warmup(spec) for target in TARGETS for spec in target.inputs]
+    assert max(warmups) >= LONG_WARMUP
 
 
 @pytest.mark.parametrize(("target", "spec"), CASES)
-def test_spike_is_invisible_before_known(target: Target, spec: InputSpec) -> None:
+def test_spike_and_shifts_are_invisible_before_known(target: Target, spec: InputSpec) -> None:
     scenario = base(target.inputs)
     with_spike, known_at = spiked(scenario, spec.role)
-    plain, spike = base_full(target), target.full(with_spike)
     assert not spike_leaks_pit(target, scenario, with_spike, known_at)
-    assert not spike_leaks_full(plain, spike, known_at)
-    assert spike_reactions(plain, spike, known_at), "the spike never changes the feature"
-    before = plain[decision_time(pd.DatetimeIndex(plain.index)) < known_at]
-    assert before.notna().any(), "the feature has no value before the spike"
+    found = responses(target, spec.role)
+    assert not {name: r.leaks for name, r in found.items() if r.leaks}
+    assert reacts(found), "neither a spike nor a level shift changes the feature"
+    assert has_value_before(target, spec.role), (
+        "the feature has no value before the event; is its declared warm-up too short?"
+    )
 
 
 @pytest.mark.parametrize("target", [pytest.param(t, id=t.name) for t in TARGETS])
@@ -83,7 +94,8 @@ def test_spike_is_invisible_before_known(target: Target, spec: InputSpec) -> Non
 @given(position=st.floats(min_value=0.0, max_value=1.0))
 def test_full_history_equals_truncated_history(target: Target, position: float) -> None:
     full = base_full(target)
-    cut = full.index[min(int(position * len(full)), len(full) - 1)]
+    valued = full.dropna().index
+    cut = valued[min(int(position * len(valued)), len(valued) - 1)]
     assert not truncation_leaks(target, base(target.inputs), full, [cut])
 
 
@@ -145,17 +157,38 @@ def _unfiltered(scenario: Scenario, as_of: pd.Timestamp) -> dict[str, PitSeries]
     return views
 
 
-PRICE = InputSpec("price", Frequency.DAILY)
-CPI = InputSpec("cpi", Frequency.MONTHLY)
+def _constant(inputs: Mapping[str, PitSeries]) -> pd.Series:
+    """Never moves: 1.0 on every decision date."""
+    dates = decision_dates(inputs)
+    return pd.Series(np.ones(len(dates)), index=dates)
+
+
+def _all_nan(inputs: Mapping[str, PitSeries]) -> pd.Series:
+    """Never has a value."""
+    dates = decision_dates(inputs)
+    return pd.Series(np.full(len(dates), np.nan), index=dates)
+
+
+PRICE = InputSpec("price", Frequency.DAILY, warmup=21)
+CPI = InputSpec("cpi", Frequency.MONTHLY, warmup=1)
 LEAKY = [
     (python_target(registry.PythonFeature("centred_mean", (PRICE,), _centred_mean)), "price"),
-    (python_target(registry.PythonFeature("cpi_by_period", (PRICE, CPI), _cpi_by_period)), "cpi"),
+    (
+        python_target(
+            registry.PythonFeature("cpi_by_period", (PRICE.with_warmup(1), CPI), _cpi_by_period)
+        ),
+        "cpi",
+    ),
     (sql_target(registry.SqlFeature("sql_by_period", (PRICE,), _sql_by_period)), "price"),
 ]
 SMA = registry.python_features()["sma_200"]
 LEAKY_READER = Target(
     "unfiltered_sma_200", SMA.inputs, lambda s, t: registry.compute(SMA, _unfiltered(s, t))
 )
+STATIC = [
+    python_target(registry.PythonFeature("constant", (PRICE,), _constant)),
+    python_target(registry.PythonFeature("all_nan", (PRICE,), _all_nan)),
+]
 
 
 @pytest.mark.parametrize(("target", "role"), LEAKY, ids=[t.name for t, _ in LEAKY])
@@ -163,7 +196,8 @@ def test_checks_catch_a_leaky_feature(target: Target, role: str) -> None:
     scenario = base(target.inputs)
     with_spike, known_at = spiked(scenario, role)
     full = base_full(target)
-    assert spike_leaks_full(full, target.full(with_spike), known_at)
+    assert leaks_full(full, target.full(with_spike), known_at)
+    assert any(r.leaks for r in responses(target, role).values())
     assert truncation_leaks(target, scenario, full, list(full.index[len(full) // 2 :: 7]))
 
 
@@ -172,3 +206,29 @@ def test_checks_catch_a_leaky_reader() -> None:
     with_spike, known_at = spiked(scenario, "price")
     assert spike_leaks_pit(LEAKY_READER, scenario, with_spike, known_at)
     assert revision_leaks(LEAKY_READER, scenario, revise(scenario, "price"))
+
+
+@pytest.mark.parametrize("target", STATIC, ids=[t.name for t in STATIC])
+def test_checks_catch_a_feature_that_never_moves(target: Target) -> None:
+    found = responses(target, "price")
+    assert not any(r.leaks for r in found.values())
+    assert not reacts(found)
+
+
+def test_checks_catch_a_feature_without_values() -> None:
+    assert not has_value_before(STATIC[1], "price")
+
+
+@pytest.fixture
+def isolated_registry(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setattr(registry, "_PYTHON", dict(registry.python_features()))
+    monkeypatch.setattr(registry, "_SQL", dict(registry.sql_features()))
+    yield
+
+
+@pytest.mark.usefixtures("isolated_registry")
+def test_registry_refuses_a_feature_without_warm_up() -> None:
+    with pytest.raises(ValueError, match="warm-up"):
+        registry.register_python("no_warm_up", InputSpec("price", Frequency.DAILY))(_constant)
+    with pytest.raises(ValueError, match="warm-up"):
+        registry.register_sql("sql_no_warm_up", InputSpec("price", Frequency.DAILY))(_sql_by_period)

@@ -9,7 +9,7 @@ import tiferet.features  # noqa: F401  (importing the package fills the registry
 from tiferet.features import registry
 from tiferet.features.view import Frequency, InputSpec, PitSeries
 
-PRICE = InputSpec("price", Frequency.DAILY)
+PRICE = InputSpec("price", Frequency.DAILY, warmup=1)
 
 
 def constant(inputs: Mapping[str, PitSeries]) -> pd.Series:
@@ -24,7 +24,8 @@ def isolated_registry(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def test_reference_features_are_registered() -> None:
-    assert {"sma_200", "momentum_12_1", "real_price"} <= set(registry.python_features())
+    expected = {"sma_200", "sma_504", "ma_cross_200", "momentum_12_1", "real_price"}
+    assert expected <= set(registry.python_features())
     assert "sql_sma_200" in registry.sql_features()
 
 
@@ -46,6 +47,23 @@ def test_duplicate_name_is_refused() -> None:
 def test_inputs_must_be_present_and_distinct(inputs: tuple[InputSpec, ...]) -> None:
     with pytest.raises(ValueError, match="distinct roles"):
         registry.register_python("new_feature", *inputs)(constant)
+
+
+@pytest.mark.usefixtures("isolated_registry")
+@pytest.mark.parametrize("warmup", [None, 0, -1, True, 2.5])
+def test_inputs_must_declare_a_warm_up(warmup: object) -> None:
+    spec = InputSpec("price", Frequency.DAILY, warmup)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="warm-up of one or more observations"):
+        registry.register_python("new_feature", spec)(constant)
+    with pytest.raises(ValueError, match="warm-up of one or more observations"):
+        registry.register_sql("new_sql_feature", spec)(lambda rel: rel)
+    assert "new_feature" not in registry.python_features()
+
+
+def test_with_warmup_keeps_role_and_frequency() -> None:
+    spec = InputSpec("cpi", Frequency.MONTHLY).with_warmup(12)
+    assert spec == InputSpec("cpi", Frequency.MONTHLY, 12)
+    assert registry.warmup(spec) == 12
 
 
 def test_compute_needs_exactly_the_declared_inputs() -> None:

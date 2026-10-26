@@ -52,6 +52,46 @@ def test_sma_200_is_forward_filled_to_as_of() -> None:
     assert result.iloc[-1] == 300.5
 
 
+def test_sma_504() -> None:
+    dates = pd.bdate_range("2019-01-01", periods=600)
+    result = run("sma_504", silver("price", dates, CLOSE, np.arange(1.0, 601.0)))
+    assert math.isnan(result[dates[502]])
+    assert result[dates[503]] == 252.5
+    assert result[dates[599]] == 348.5
+
+
+def test_ma_cross_200() -> None:
+    # 199 observations at 100, then 110 (above the average), 90 and 90 (below), then 120
+    # (above): crosses on the first 90 and on the first 120.
+    values = np.array([100.0] * 199 + [110.0, 90.0, 90.0] + [120.0] * 8)
+    dates = pd.bdate_range("2020-01-01", periods=len(values))
+    result = run("ma_cross_200", silver("price", dates, CLOSE, values))
+    assert math.isnan(result[dates[199]])
+    assert [result[dates[i]] for i in range(200, 205)] == [1.0, 0.0, 1.0, 0.0, 0.0]
+
+
+def test_ma_cross_200_ignores_touching_the_average() -> None:
+    values = np.array([100.0] * 205)
+    dates = pd.bdate_range("2020-01-01", periods=len(values))
+    result = run("ma_cross_200", silver("price", dates, CLOSE, values))
+    assert (result[dates[200] :] == 0.0).all()
+
+
+@pytest.mark.parametrize(
+    ("name", "warmups"),
+    [
+        ("sma_200", {"price": 200}),
+        ("sma_504", {"price": 504}),
+        ("ma_cross_200", {"price": 201}),
+        ("momentum_12_1", {"price": 253}),
+        ("real_price", {"price": 1, "cpi": 1}),
+    ],
+)
+def test_declared_warm_ups(name: str, warmups: dict[str, int]) -> None:
+    feature = registry.python_features()[name]
+    assert {spec.role: spec.warmup for spec in feature.inputs} == warmups
+
+
 def test_momentum_12_1() -> None:
     result = run("momentum_12_1", PRICE)
     assert math.isnan(result[DATES[251]])

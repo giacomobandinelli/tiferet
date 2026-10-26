@@ -1,10 +1,11 @@
 """Registry of features (plan §3.3, §10.1; decision 0010).
 
-A feature declares its inputs and is a pure function of their point-in-time views. A Python
-feature maps each input role to a `PitSeries` and returns a float Series indexed by daily
-decision date up to the views' `as_of`. A SQL feature maps the relation built by
-`tiferet.data.pit_sql.inputs` to a relation with columns `date, value`. The locked look-ahead
-test iterates this registry, so every feature registered here is covered by it.
+A feature declares its inputs, each with its warm-up, and is a pure function of their
+point-in-time views. A Python feature maps each input role to a `PitSeries` and returns a
+float Series indexed by daily decision date up to the views' `as_of`. A SQL feature maps the
+relation built by `tiferet.data.pit_sql.inputs` to a relation with columns `date, value`. The
+locked look-ahead test iterates this registry, so every feature registered here is covered by
+it, on synthetic histories as long as each input's warm-up requires.
 """
 
 from collections.abc import Callable, Mapping
@@ -53,6 +54,19 @@ def _check_declaration(name: str, inputs: tuple[InputSpec, ...]) -> None:
     roles = [check_series_id(spec.role) for spec in inputs]
     if not roles or len(set(roles)) != len(roles):
         raise ValueError(f"feature {name!r} needs one or more inputs with distinct roles")
+    for spec in inputs:
+        warmup(spec, name)
+
+
+def warmup(spec: InputSpec, feature: str = "") -> int:
+    """The declared warm-up of an input: a whole number of observations, at least one."""
+    count = spec.warmup
+    if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+        owner = f"feature {feature!r} " if feature else ""
+        raise ValueError(
+            f"{owner}input {spec.role!r} needs a warm-up of one or more observations, got {count!r}"
+        )
+    return count
 
 
 def register_python(name: str, *inputs: InputSpec) -> Callable[[PythonFn], PythonFn]:

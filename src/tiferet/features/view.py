@@ -8,7 +8,7 @@ moment `decision_time(d)`, 23:59:59 in Berlin.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Final
 
@@ -30,10 +30,19 @@ class Frequency(StrEnum):
 
 @dataclass(frozen=True)
 class InputSpec:
-    """One input of a feature: the role it plays and the frequency of its observations."""
+    """One input of a feature: its role, the frequency of its observations and its warm-up.
+
+    `warmup` is the number of observations of this input, at its own frequency, that the
+    feature's first value depends on: 200 for a 200-observation moving average, 253 for a
+    return from 252 observations ago. The registry refuses a feature whose inputs lack it.
+    """
 
     role: str
     frequency: Frequency
+    warmup: int | None = None
+
+    def with_warmup(self, warmup: int) -> "InputSpec":
+        return replace(self, warmup=warmup)
 
 
 @dataclass(frozen=True)

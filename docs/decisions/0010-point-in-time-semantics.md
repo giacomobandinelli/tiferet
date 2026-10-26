@@ -54,25 +54,44 @@ In research mode, an `as_of` later than 2022-12-31 23:59:59 Europe/Berlin raises
 
 **Features.**
 
-- A feature declares its inputs as a tuple of `InputSpec(role, frequency)`, where frequency is daily, weekly, monthly or quarterly.
+- A feature declares its inputs as a tuple of `InputSpec(role, frequency, warmup)`:
+  - frequency is daily, weekly, monthly or quarterly;
+  - warmup is the number of observations of that input, at its own frequency, that the feature's first value depends on: 200 for a 200-observation moving average, 253 for a return from 252 observations ago.
+
+  The registry refuses a feature whose inputs lack a warm-up of at least one observation.
 - A Python feature takes a mapping from role to `PitSeries` and returns a float series on decision dates. A `PitSeries` holds the values and the `known_at` of one input, indexed by `obs_date`, together with the `as_of` of the view.
 - A SQL feature takes the relation from `pit_sql.inputs` and returns a relation with columns `date, value`.
 - Features compute per observation. They then place the result on decision dates with `align` (Python) or `aligned_query` (SQL). A result becomes available at the running maximum of `known_at` up to its observation, because a trailing computation depends on every earlier observation. Each value is forward-filled from that moment, so a monthly series enters a daily feature only once it is published.
 - The last decision date of a view is the business day of its `as_of`. So `evaluate(feature, views)`, the value at the last decision date, is the value known at `as_of`.
 - Features live in a registry in `src/tiferet/features/registry.py`. Importing `tiferet.features` registers them all.
 
-**Locked test.** `tests/locked/test_no_look_ahead_registry.py`, with its harness `tests/locked/look_ahead_harness.py`, iterates the registry. It generates synthetic inputs for each declared spec, with publication lags that cross at least one day boundary, and runs every check once per input:
+**Locked test.** `tests/locked/test_no_look_ahead_registry.py`, with its harness `tests/locked/look_ahead_harness.py`, iterates the registry.
 
-- A spike in that input changes nothing before the spike's `known_at`, on the point-in-time path and on a single full-history computation. The spike must also change the feature afterwards, and the feature must have values before it, so a feature that never moves or is always NaN cannot pass by comparing NaN with NaN.
-- Hypothesis checks that the full-history value at random cut dates equals the value computed from history truncated at the cut by the point-in-time reader: `pit.get` for Python features, `pit_sql.inputs` for SQL features.
-- A revised value is invisible before its revision `known_at` and visible from then on.
-- Leaky code defined inside the test must be caught, which proves every check can fail:
+It generates a synthetic history for each declared spec:
+
+- Publication lags cross at least one day boundary.
+- Each history holds the input's warm-up, then a margin (30 daily, 6 weekly, 3 monthly or 2 quarterly observations), up to a shared event date of 2022-03-01, and 180 days after it.
+- So a feature with a long window (a 2-year average, a 3-year volatility or z-score) has values before the event, and every input of a multi-input feature has warmed up by then.
+- The histories end before the holdout.
+
+It runs every check once per input:
+
+- **Spike.** A one-day spike at the event changes nothing before the spike's `known_at`, on the point-in-time path and on a single full-history computation.
+- **Level shifts.** Lasting shifts from the event on (×10, ×0.1, and ±10 standard deviations of the input, so inputs near or below zero also move) change nothing before the same `known_at` on the full-history computation.
+- **Reaction.** The spike or one of the shifts must change the feature from then on, and the feature must have values before the event. A binary signal such as a moving-average cross may ignore a spike yet react to a shift. A feature that never moves, or is always NaN, cannot pass by comparing NaN with NaN.
+- **Truncation.** Hypothesis checks that the full-history value at random cut dates, drawn from the dates where the feature has a value, equals the value computed from history truncated at the cut by the point-in-time reader: `pit.get` for Python features, `pit_sql.inputs` for SQL features.
+- **Revision.** A revised value is invisible before its revision `known_at` and visible from then on. "From then on" means at moments whose last decision date stands for the revision's `known_at` or later. A view taken on a weekend ends on the Friday before, so it cannot show a revision published that weekend.
+- **Self-checks.** Code defined inside the test must be caught, which proves every check can fail:
   - a centred moving average;
   - a mixed-frequency Python feature that aligns its monthly input by `obs_date`;
   - a SQL feature that aligns by `obs_date`;
-  - a reader that ignores `known_at`.
+  - a reader that ignores `known_at`;
+  - a constant feature and an all-NaN feature, which must fail the reaction check;
+  - a feature without a warm-up, which the registry must refuse.
 
-The registry must hold at least one multi-input feature in Python and one in SQL (`real_price` and `sql_real_price`).
+The registry must hold at least one multi-input feature in Python and one in SQL (`real_price` and `sql_real_price`), and one with a warm-up of at least 504 daily observations (`sma_504`). `ma_cross_200` is the binary reference feature.
+
+The locked test is protected once it is in a `locked/*` tag (0011).
 
 The test covers features only. Label leakage and purged walk-forward splits are tested separately when the cycle-phase model is built (§3.4).
 
@@ -85,3 +104,4 @@ The test covers features only. Label leakage and purged walk-forward splits are 
 - Features added to the registry are covered by the locked test with no change to it.
 - The truncation property holds for inputs whose `known_at` increases with `obs_date`. Late-published or revised observations are covered by the point-in-time checks instead, because a single full-history computation cannot reproduce earlier vintages.
 - The holdout boundary is defined in Berlin time, so values published in the last hour of 2022 UTC fall in the holdout.
+- A view taken between a business day's decision moment and the next business day holds only the latest version of each observation. So when a revision is published over a weekend, the Friday value computed from a Sunday view uses neither the first nor the revised version of that observation, but the observation before it. This hides information and never leaks it. `run_backtest()` must take decisions from views at business-day decision moments, so that it is not affected.
