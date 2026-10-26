@@ -110,7 +110,7 @@ Backtest runs also write their receipt to the trial ledger. (§8.5)
 
 `permissions.deny` refuses pushes to `main` and force pushes (agents push their own branches for pull requests), edits to the pre-registration, and reads of `data/holdout`.
 
-Hooks and permission rules apply in every session that loads the project settings, local and cloud. Hooks can be bypassed, so the binding protections are still the code and CI checks: the point-in-time loader's holdout refusal, the locked tests, the CI check on tagged protected files, and the holdout's encryption (§8.2). The vault guard blocks access, not words: commit messages, test names and searches for `holdout`, `unseal` or the flag's name are allowed (0008). The pre-registration guard blocks a Bash command that names a protected file and also writes anything, so keep such commands separate from writes such as `git push`.
+Hooks and permission rules apply in every session that loads the project settings, local and cloud. Hooks can be bypassed, so the binding protections are still the code and CI checks: the point-in-time loader's holdout refusal, the locked tests, the CI check on tagged protected files, and the holdout's encryption (§8.2). The vault guard blocks access, not words: commit messages, test names and searches for `holdout`, `unseal` or the flag's name are allowed (0008). The pre-registration guard blocks a Bash command that names a protected file and also writes anything, so keep such commands separate from writes such as `git push`. It also refuses any change to a file that already exists in `tests/locked/`, an untracked draft included, so a locked-test draft is developed and run outside that folder and written there once, with Write, when final.
 
 ## Agents
 
