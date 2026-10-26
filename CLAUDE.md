@@ -55,7 +55,9 @@ Where things live (§9). Details are read on demand, not copied here (§8.5). Fo
 | `tests/fixtures/` | Small datasets so every test runs without credentials |
 | `tests/locked/` | Protected tests, including the no-look-ahead test for Python and SQL features |
 | `.claude/` | Settings and hooks, agents, workflows, skills |
-| `.github/workflows/` | CI, nightly pipeline, manually triggered agent jobs |
+| `.github/workflows/` | CI (`ci.yml`), nightly pipeline, manually triggered agent jobs |
+| `.github/protected-tags.txt` | Every `locked/*` tag that must exist (0012) |
+| `scripts/` | Standard-library scripts; `check_protected.py` is the CI check on tagged files (0012) |
 | `data/` | Local data, gitignored; `data/holdout/` is never read |
 | `notes/` | Untracked working notes, gitignored |
 
@@ -110,7 +112,7 @@ Backtest runs also write their receipt to the trial ledger. (§8.5)
 
 `permissions.deny` refuses pushes to `main` and force pushes (agents push their own branches for pull requests), edits to the pre-registration, and reads of `data/holdout`.
 
-Hooks and permission rules apply in every session that loads the project settings, local and cloud. Hooks can be bypassed, so the binding protections are still the code and CI checks: the point-in-time loader's holdout refusal, the locked tests, the CI check on tagged protected files (not built yet), the tag ruleset on `locked/*`, and the holdout's encryption (§8.2, 0011). The vault guard blocks access, not words: commit messages, test names and searches for `holdout`, `unseal` or the flag's name are allowed (0008). The pre-registration guard blocks a Bash command that names a protected file and also writes anything, so keep such commands separate from writes such as `git push`. Files in `tests/locked/` are protected once they are in a tag named `locked/<name>-v<n>`; until then they are drafts, edited, moved and deleted in place (0011). The owner creates those tags and agents never manage them. A writing command run inside a folder that holds a tagged file is blocked even when it touches only a draft, so name drafts by path from the repository root. The first locked-test draft had to be staged outside `tests/locked/` because an earlier guard protected every existing file there; 0011 records the fix.
+Hooks and permission rules apply in every session that loads the project settings, local and cloud. Hooks can be bypassed, so the binding protections are still the code and CI checks: the point-in-time loader's holdout refusal, the locked tests, the CI check on tagged protected files (`scripts/check_protected.py`, 0012), the tag ruleset on `locked/*`, and the holdout's encryption (§8.2, 0011). The vault guard blocks access, not words: commit messages, test names and searches for `holdout`, `unseal` or the flag's name are allowed (0008). The pre-registration guard blocks a Bash command that names a protected file and also writes anything, so keep such commands separate from writes such as `git push`. Files in `tests/locked/` are protected once they are in a tag named `locked/<name>-v<n>`; until then they are drafts, edited, moved and deleted in place (0011). The owner creates those tags and agents never manage them. A writing command run inside a folder that holds a tagged file is blocked even when it touches only a draft, so name drafts by path from the repository root. The first locked-test draft had to be staged outside `tests/locked/` because an earlier guard protected every existing file there; 0011 records the fix.
 
 ## Agents
 
@@ -152,4 +154,7 @@ uv run ruff format .           # format (§8.2)
 uv run ruff format --check .   # format check (§8.1)
 uv run ruff check .            # lint (§8.1)
 uv run mypy --strict src tests # type check (§8.1, §10.3)
+python3 scripts/check_protected.py  # tagged files unchanged; needs the tags fetched (§8.2, 0012)
 ```
+
+CI (`.github/workflows/ci.yml`) runs the first five on Ubuntu and Windows for every push and pull request, plus `check_protected.py` in a separate job. (§8.2, 0012)

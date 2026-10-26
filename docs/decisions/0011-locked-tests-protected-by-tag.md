@@ -28,9 +28,9 @@ Plan §4 and §8.1 let agents draft tests in `tests/locked/`. The owner approves
 
 - A locked-test draft is written, run and corrected in `tests/locked/` itself, next to its harness, with no staging folder.
 - The hook trusts the local tags, so it protects only as well as they can be trusted. The binding protections are:
-  - a CI check that fails if a file in a `locked/*` tag differs from its tagged version, or if `research/preregistration.yaml` changes after its tagged commit (§8.2). This check is not built yet;
+  - a CI check that fails if a file in the highest `locked/*` tag of a name differs from its tagged version, or if `research/preregistration.yaml` changes after its tagged commit (§8.2). It exists as `scripts/check_protected.py`, run by `.github/workflows/ci.yml`; decision 0012 records its rules and the `prereg/v<n>` tag format;
   - a GitHub tag ruleset on `locked/*` that blocks deleting or moving those tags. The owner sets it after the first tag.
 - A command run inside a folder that holds a tagged file, or one that names such a folder, is blocked when it writes anything, even if it changes only a draft. Its other arguments cannot all be read as paths.
 - A session outside a git repository, or one where git fails, cannot change `tests/locked/` until git works. Requests that do not touch `tests/locked` never call git.
-- A clone without the tags protects nothing under `tests/locked/`, because every file there reads as a draft. Examples are `--no-tags` clones and CI checkouts that fetch no tags. Agent sessions work in clones that fetch tags. The CI check must fetch the tags explicitly and fail if a `locked/*` tag it expects is missing.
+- A clone without the tags protects nothing under `tests/locked/`, because every file there reads as a draft. Examples are `--no-tags` clones and CI checkouts that fetch no tags. Agent sessions work in clones that fetch tags. The CI check fetches the tags explicitly and fails if a `locked/*` tag it expects is missing.
 - Commands that act on the whole tree without naming paths are not checked against the tagged files, for example `uv run ruff format .`, `git rm -r .` and `git checkout <branch>`. Blocking them would block the documented format command. The CI check catches any change they make to a tagged file.
