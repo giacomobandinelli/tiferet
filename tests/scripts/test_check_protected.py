@@ -114,7 +114,7 @@ def test_unlisted_locked_tag_fails(repo: Repo, capsys: pytest.CaptureFixture[str
     assert "not listed" in out
 
 
-@pytest.mark.parametrize("name", ["locked/x", "locked/X-v1", "locked/x-v0", "locked/x-v01"])
+@pytest.mark.parametrize("name", ["locked/y", "locked/Y_v1", "locked/y-v0", "locked/y-v01"])
 def test_malformed_locked_tag_fails(
     repo: Repo, capsys: pytest.CaptureFixture[str], name: str
 ) -> None:

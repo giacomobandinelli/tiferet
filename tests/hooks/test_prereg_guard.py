@@ -17,6 +17,16 @@ DRAFT = "tests/locked/test_draft.py"
 TAG = "locked/no-lookahead-v1"
 
 
+def remove_git_dir(project: Path) -> None:
+    """Delete .git; git writes its objects read-only, which Windows refuses to remove."""
+
+    def make_writable(func: Any, path: str, _exc: Any) -> None:
+        os.chmod(path, 0o700)
+        func(path)
+
+    shutil.rmtree(project / ".git", onexc=make_writable)
+
+
 def git(project: Path, *args: str) -> str:
     config = ["-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
     config += ["-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"]
@@ -287,7 +297,7 @@ def test_other_tag_commands_are_allowed(project: Path, command: str) -> None:
 
 
 def test_no_repository_blocks_locked_changes(project: Path) -> None:
-    shutil.rmtree(project / ".git")
+    remove_git_dir(project)
     result = run_hook(HOOK, tool_payload("Edit", edit(DRAFT), project), project=project)
     assert result.returncode == 2
     assert "could not read the locked/* tags" in result.stderr
@@ -311,7 +321,7 @@ def test_unreadable_tag_blocks_locked_changes(project: Path) -> None:
 
 
 def test_changes_elsewhere_need_no_repository(project: Path, tmp_path: Path) -> None:
-    shutil.rmtree(project / ".git")
+    remove_git_dir(project)
     empty = tmp_path / "empty_bin"
     empty.mkdir()
     env = {"PATH": str(empty)}
