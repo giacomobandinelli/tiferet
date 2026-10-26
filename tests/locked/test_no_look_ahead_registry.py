@@ -31,7 +31,6 @@ from hypothesis import strategies as st
 
 import tiferet.features  # noqa: F401  (importing the package fills the registry)
 from locked.look_ahead_harness import (
-    CON,
     Scenario,
     Target,
     base,
@@ -63,10 +62,6 @@ TARGETS = [python_target(f) for f in registry.python_features().values()]
 TARGETS += [sql_target(f) for f in registry.sql_features().values()]
 CASES = [pytest.param(t, spec, id=f"{t.name}-{spec.role}") for t in TARGETS for spec in t.inputs]
 LONG_WARMUP = 504  # a 2-year window of daily observations
-
-
-def teardown_module() -> None:
-    CON.close()
 
 
 def test_registry_covers_python_sql_multi_input_and_long_window_features() -> None:
@@ -110,6 +105,15 @@ def test_revision_is_invisible_before_its_known_at(target: Target, spec: InputSp
     assert seen(revision.revised_known - pd.Timedelta(microseconds=1)) == revision.first
     assert seen(revision.revised_known) == revision.second
     assert not revision_leaks(target, scenario, revision)
+
+
+def _running_mean(inputs: Mapping[str, PitSeries]) -> pd.Series:
+    """Not leaky: the mean of every observation so far, read below through a leaky reader.
+
+    Its last value depends on every observation, so a reader that leaks any of them shows.
+    """
+    price = inputs["price"]
+    return align(price.values.expanding().mean(), price, decision_dates(inputs))
 
 
 def _centred_mean(inputs: Mapping[str, PitSeries]) -> pd.Series:
@@ -181,9 +185,9 @@ LEAKY = [
     ),
     (sql_target(registry.SqlFeature("sql_by_period", (PRICE,), _sql_by_period)), "price"),
 ]
-SMA = registry.python_features()["sma_200"]
+MEAN = registry.PythonFeature("running_mean", (PRICE,), _running_mean)
 LEAKY_READER = Target(
-    "unfiltered_sma_200", SMA.inputs, lambda s, t: registry.compute(SMA, _unfiltered(s, t))
+    "unfiltered_running_mean", MEAN.inputs, lambda s, t: registry.compute(MEAN, _unfiltered(s, t))
 )
 STATIC = [
     python_target(registry.PythonFeature("constant", (PRICE,), _constant)),

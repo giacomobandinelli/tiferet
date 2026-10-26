@@ -70,11 +70,14 @@ def test_ma_cross_200() -> None:
     assert [result[dates[i]] for i in range(200, 205)] == [1.0, 0.0, 1.0, 0.0, 0.0]
 
 
-def test_ma_cross_200_ignores_touching_the_average() -> None:
-    values = np.array([100.0] * 205)
+def test_ma_cross_200_through_the_average() -> None:
+    # 110 is above its average (100); the next 100 equals its average exactly; 90 is below.
+    # Passing through the average is one cross, where the price reaches the other side.
+    values = np.array([100.0] * 198 + [90.0, 110.0, 100.0, 90.0, 90.0])
     dates = pd.bdate_range("2020-01-01", periods=len(values))
     result = run("ma_cross_200", silver("price", dates, CLOSE, values))
-    assert (result[dates[200] :] == 0.0).all()
+    assert pd.Series(values).rolling(200).mean()[200] == values[200]
+    assert [result[dates[i]] for i in range(200, 203)] == [0.0, 1.0, 0.0]
 
 
 @pytest.mark.parametrize(

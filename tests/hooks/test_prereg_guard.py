@@ -170,6 +170,14 @@ def test_other_files_are_allowed(project: Path, tool_input: dict[str, Any]) -> N
         "uv run ruff format tests/locked/test_no_lookahead.py",
         "mv tests/locked/test_no_lookahead.py /tmp/",
         "git mv tests/locked/test_no_lookahead.py tests/test_no_lookahead.py",
+        "cat <<<hi\nrm tests/locked/test_no_lookahead.py",
+        'echo "<<END"\nrm tests/locked/test_no_lookahead.py\nEND',
+        "echo `rm tests/locked/test_no_lookahead.py`",
+        "rm tests/locked/test_no_lookahead.p{y,}",
+        "rm tests/{locked,other}/test_no_lookahead.py",
+        "git diff --output=tests/locked/test_no_lookahead.py",
+        "find . -name x -fprint0 tests/locked/test_no_lookahead.py",
+        "find . -fls tests/locked/test_no_lookahead.py",
         # A command run inside a folder that holds a tagged file is blocked even when it
         # names only a draft, because its other arguments cannot all be read as paths.
         "cd tests/locked && rm test_draft.py",
@@ -245,6 +253,12 @@ def test_untagged_locked_folder_may_be_cleared(project: Path) -> None:
         "git fetch origin refs/tags/locked/x-v1:refs/tags/locked/x-v1",
         "rm .git/refs/tags/locked/no-lookahead-v1",
         "sed -i '/locked/d' .git/packed-refs",
+        "rm -rf .git/refs/tags",
+        "rm -rf .git",
+        "cd .git && rm packed-refs",
+        "git replace -f HEAD HEAD~1",
+        "git fetch --tags --force origin",
+        "git fetch -f --tags origin",
     ],
 )
 def test_changes_to_locked_tags_are_blocked(project: Path, command: str) -> None:
@@ -262,6 +276,10 @@ def test_changes_to_locked_tags_are_blocked(project: Path, command: str) -> None
         "git push -u origin claude/some-branch",
         "git fetch -p origin",
         "git fetch origin claude/some-branch",
+        "git fetch --tags origin",
+        "git replace -l",
+        "cat .git/HEAD",
+        "git log --oneline -3",
     ],
 )
 def test_other_tag_commands_are_allowed(project: Path, command: str) -> None:

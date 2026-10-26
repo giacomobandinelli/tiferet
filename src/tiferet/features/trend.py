@@ -45,12 +45,14 @@ def ma_cross_200(inputs: Mapping[str, PitSeries]) -> pd.Series:
     """1.0 where the price moves from one side of its 200-observation average to the other.
 
     0.0 at every other observation, NaN until the average exists on two observations. A
-    price equal to its average is on neither side, so moving onto it is not a cross.
+    price equal to its average is on neither side: moving onto it is not a cross, and
+    passing through it counts as a cross where the price reaches the other side.
     """
     price = inputs[PRICE.role]
     gap = price.values - _sma(price.values, SMA_WINDOW)
     side = pd.Series(np.sign(gap.to_numpy(dtype=float)), index=gap.index)
-    crossed = (side * side.shift(1) < 0).astype(float)
+    last_side = side.where(side != 0).ffill()
+    crossed = ((side != 0) & (last_side * last_side.shift(1) < 0)).astype(float)
     computed = crossed.where(side.notna() & side.shift(1).notna())
     return align(computed, price, decision_dates(inputs))
 

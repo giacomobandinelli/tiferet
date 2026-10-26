@@ -15,8 +15,9 @@ Plan §4 and §8.1 let agents draft tests in `tests/locked/`. The owner approves
   - create, delete or move a tag: `git tag` with a `locked/*` name, outside `--list` and `--verify`;
   - delete or rewrite one on the remote: `git push` naming a `locked/*` tag, `--delete`, a `:refs/tags/locked/...` refspec, `--mirror` or `--prune`;
   - rewrite the ref: `git update-ref` on `refs/tags/locked/...`, or with `--stdin`;
-  - replace or prune local tags: `git fetch` or `git pull` with `--prune-tags`, `-P`, a forced tag refspec or a `refs/tags/locked/` refspec;
-  - write `.git/refs/tags/locked` or `.git/packed-refs` directly.
+  - replace or prune local tags: `git fetch` or `git pull` with `--prune-tags`, `-P`, `--force` with `--tags`, a forced tag refspec or a `refs/tags/locked/` refspec;
+  - substitute the objects a tag points to: `git replace`, outside `--list`;
+  - write anything inside `.git`, where the tags live.
 - **How the hook reads tags.** It lists the tags with `git tag --list --ignore-case 'locked/*'`, then each tag's files with `git ls-tree -r -z --name-only`.
   - Paths are compared without case and slash direction, like the rest of the guard. A case-sensitive probe such as `git cat-file -e <tag>:<path>` would let `tests\LOCKED\Test_X.py` through on Windows and macOS.
   - A directory holding a tagged file, and a wildcard that can match one, count as protected.
@@ -31,3 +32,5 @@ Plan §4 and §8.1 let agents draft tests in `tests/locked/`. The owner approves
   - a GitHub tag ruleset on `locked/*` that blocks deleting or moving those tags. The owner sets it after the first tag.
 - A command run inside a folder that holds a tagged file, or one that names such a folder, is blocked when it writes anything, even if it changes only a draft. Its other arguments cannot all be read as paths.
 - A session outside a git repository, or one where git fails, cannot change `tests/locked/` until git works. Requests that do not touch `tests/locked` never call git.
+- A clone without the tags protects nothing under `tests/locked/`, because every file there reads as a draft. Examples are `--no-tags` clones and CI checkouts that fetch no tags. Agent sessions work in clones that fetch tags. The CI check must fetch the tags explicitly and fail if a `locked/*` tag it expects is missing.
+- Commands that act on the whole tree without naming paths are not checked against the tagged files, for example `uv run ruff format .`, `git rm -r .` and `git checkout <branch>`. Blocking them would block the documented format command. The CI check catches any change they make to a tagged file.

@@ -12,6 +12,7 @@ event and every input of a multi-input feature has warmed up by then. Spikes, le
 and revisions are placed on each input's last observation on or before the event date.
 """
 
+import atexit
 import functools
 import itertools
 import math
@@ -63,6 +64,7 @@ if EVENT + AFTER + max(LAG.values()) >= pd.Timestamp("2023-01-01"):
     raise RuntimeError("the synthetic histories must end before the holdout")
 
 CON = duckdb.connect()
+atexit.register(CON.close)  # shared by every test module that imports the harness
 _TABLES = itertools.count()
 
 

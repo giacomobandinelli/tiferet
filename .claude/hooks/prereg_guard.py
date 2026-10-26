@@ -11,8 +11,10 @@ edited, moved or deleted.
 - A Bash command that names a protected target, or a directory holding one, is allowed only
   when every part of it is read-only (cat, grep, git diff, pytest, ...). A redirection into a
   protected target is blocked.
-- A Bash command that creates, deletes, moves or rewrites a `locked/*` tag is blocked: agents
-  never manage those tags.
+- A Bash command that creates, deletes, moves or rewrites a `locked/*` tag, or that writes
+  anything inside `.git`, is blocked: agents never manage those tags.
+- Commands on the whole tree (`ruff format .`, `git checkout <branch>`) are not checked
+  against the tagged paths; the CI check catches what they change (decision 0011).
 
 The tagged paths are read with `git tag --list` and `git ls-tree`, only when a request touches
 `tests/locked`. If git cannot be run or answers with an error, the request is blocked.
@@ -57,12 +59,15 @@ READ_ONLY_GIT = {"status", "diff", "log", "show", "blame", "ls-files", "add", "c
 GIT_OPTIONS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
 TAG_LIST_FLAGS = {"-l", "--list", "-v", "--verify"}
 TAG_WRITE_FLAGS = {"-d", "--delete", "-f", "--force"}
-FIND_WRITES = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprintf"}
+FIND_WRITES = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0"}
+FIND_WRITES |= {"-fprintf", "-fls"}
 ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-HEREDOC_START = re.compile(r"<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?")
+HEREDOC_START = re.compile(r"(?<!<)<<(?!<)-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?")
 LOCKED_MENTION = re.compile(r"(?<![\w.-])tests/locked(?:/[^\s'\"`;&|<>()]*)?(?![\w.-])")
-GLOB_CHARS = set("*?[")
-TAG_STORE = (".git/refs/tags/locked", ".git/packed-refs")
+GLOB_CHARS = set("*?[{")
+BRACES = re.compile(r"\{[^{}]*\}")
+GIT_STORE = ".git"
+GIT_STORE_MENTION = re.compile(r"(?<![\w.-])\.git/")
 
 
 class BlockedError(Exception):
@@ -107,6 +112,10 @@ class Paths:
 
 def under_locked(rel: str) -> bool:
     return rel == LOCKED or rel.startswith(LOCKED + "/")
+
+
+def in_git_store(rel: str | None) -> bool:
+    return rel is not None and (rel == GIT_STORE or rel.startswith(GIT_STORE + "/"))
 
 
 def may_hold_locked(rel: str) -> bool:
@@ -165,6 +174,7 @@ class Protection:
         """True if a wildcard path can match the pre-registration or a tagged path."""
         if rel is None:
             return False
+        rel = BRACES.sub("*", rel)  # a brace expansion matches no more than a wildcard
         if fnmatchcase(PREREG, rel):
             return True
         literal = re.split(r"[*?\[]", rel, maxsplit=1)[0]
@@ -193,12 +203,16 @@ def strip_heredocs(command: str) -> str:
                 delimiters.pop(0)
             continue
         kept.append(line)
-        delimiters.extend(HEREDOC_START.findall(line))
+        for match in HEREDOC_START.finditer(line):
+            before = line[: match.start()]
+            if before.count("'") % 2 == 0 and before.count('"') % 2 == 0:  # not quoted
+                delimiters.append(match.group(1))
     return "\n".join(kept)
 
 
 def tokenize(command: str) -> list[str]:
     text = strip_heredocs(command).replace("\\", "/").replace("\n", " ; ")
+    text = text.replace("`", " ; ")  # a command substitution is a command of its own
     lexer = shlex.shlex(text, posix=True, punctuation_chars=";&|<>()")
     lexer.whitespace_split = True
     lexer.commenters = ""
@@ -239,8 +253,9 @@ def is_read_only(args: list[str]) -> bool:
     if name == "find":
         return not FIND_WRITES.intersection(a.lower() for a in rest)
     if name == "git":
-        sub, _ = git_subcommand(rest)
-        return sub in READ_ONLY_GIT
+        sub, sub_args = git_subcommand(rest)
+        writes_output = any(a.lower().startswith("--output") for a in sub_args)
+        return sub in READ_ONLY_GIT and not writes_output
     if name == "ruff":
         lowered = [a.lower() for a in rest]
         if "check" in lowered:
@@ -290,9 +305,16 @@ def check_tag_change(args: list[str]) -> None:
     elif sub == "update-ref":
         if "--stdin" in options or any(TAG_REF in a for a in lowered):
             reason = "the command rewrites a locked/* tag ref"
+    elif sub == "replace":
+        if positional and not {"-l", "--list"} & options:
+            reason = "the command replaces objects that locked/* tags point to"
     elif sub in ("fetch", "pull"):
         prunes = "--prune-tags" in options or has_short_flag(rest, "P")
-        forced_tags = any(a.startswith("+") and "refs/tags/" in a for a in lowered)
+        forced = "--force" in options or has_short_flag(rest, "f")
+        all_tags = "--tags" in options or has_short_flag(rest, "t")
+        forced_tags = (forced and all_tags) or any(
+            a.startswith("+") and "refs/tags/" in a for a in lowered
+        )
         if prunes or forced_tags or any(TAG_REF in a for a in lowered):
             reason = "the command can delete or move locked/* tags"
     if reason:
@@ -306,6 +328,7 @@ def check_command(command: str, cwd: str, paths: Paths, guard: Protection) -> No
     if "preregistration.yaml" in lowered:
         named.append(PREREG)
     named.extend(mention.rstrip("/") for mention in LOCKED_MENTION.findall(lowered))
+    git_store = bool(GIT_STORE_MENTION.search(lowered))
     writes = False
     for segment in split_segments(tokenize(command)):
         args: list[str] = []
@@ -328,16 +351,18 @@ def check_command(command: str, cwd: str, paths: Paths, guard: Protection) -> No
                 continue
             rel = paths.relative(paths.absolute(arg, cwd))
             (globs if GLOB_CHARS & set(arg) else named).append(rel)
+            git_store = git_store or in_git_store(rel)
         cwd_rel = paths.relative(cwd)
         if cwd_rel is not None and under_locked(cwd_rel):
             named.append(cwd_rel)
+        git_store = git_store or in_git_store(cwd_rel)
         writes = writes or not is_read_only(args)
         if args[0] == "cd":
             cwd = paths.absolute(args[1], cwd) if len(args) > 1 else paths.root
     if not writes:
         return
-    if any(store in lowered for store in TAG_STORE):
-        raise BlockedError("the command writes git's tag store; agents never manage tags")
+    if git_store:
+        raise BlockedError("the command writes inside .git, where the tags live")
     if any(guard.covers(rel) for rel in named) or any(guard.covers_glob(rel) for rel in globs):
         raise BlockedError("the command names a protected file and is not read-only")
 
