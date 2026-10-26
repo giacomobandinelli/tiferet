@@ -5,10 +5,12 @@ file change is allowed only inside `src/tiferet/research/` or `research/strategi
 anything else is blocked (exit code 2, reason on stderr).
 
 The target is resolved against the session's working directory, with backslashes read as
-slashes and `..` and symlinks resolved, and compared with the project root. The comparison
-is case-sensitive: a spelling such as `SRC/Tiferet/Research/` is refused on every platform,
-so a case-insensitive file system cannot turn it into a different directory. Unreadable
-input is refused. The hook uses only the standard library.
+slashes, and checked twice against the project root: as written, with `..` collapsed
+lexically, and after symlinks are resolved. Both must fall inside an allowed directory.
+The comparison below the project root is case-sensitive: a spelling such as
+`SRC/Tiferet/Research/` is refused on every platform, even where resolving the path would
+correct its case, so a case-insensitive file system cannot turn it into a different
+directory. Unreadable input is refused. The hook uses only the standard library.
 """
 
 from __future__ import annotations
@@ -27,15 +29,31 @@ class BlockedError(Exception):
     """Raised with the reason a change is refused."""
 
 
-def relative_to_root(path: str, cwd: str, root: str) -> str | None:
-    """The target as a slash-separated path relative to the project, or None if outside."""
-    absolute = os.path.realpath(os.path.join(cwd, path.replace("\\", "/")))
+def relative_to_root(absolute: str, root: str) -> str | None:
+    """`absolute` as a slash-separated path relative to `root`, or None if outside.
+
+    Only the root prefix is matched as the platform matches it (case-insensitively on
+    Windows); the remainder keeps the case it was given.
+    """
     try:
-        rel = os.path.relpath(absolute, os.path.realpath(root))
+        rel = os.path.relpath(absolute, root)
     except ValueError:  # another drive on Windows
         return None
     rel = rel.replace("\\", "/")
     return None if rel == ".." or rel.startswith("../") else rel
+
+
+def in_scope(absolute: str, roots: tuple[str, ...]) -> bool:
+    rels = (relative_to_root(absolute, root) for root in roots)
+    return any(rel is not None and rel.startswith(ALLOWED_DIRS) for rel in rels)
+
+
+def allowed(path: str, cwd: str, root: str) -> bool:
+    """True if the path as written and its resolved target are both in an allowed dir."""
+    absolute = os.path.join(cwd, path.replace("\\", "/"))
+    roots = (os.path.abspath(root), os.path.realpath(root))
+    as_written = os.path.normpath(os.path.abspath(absolute))
+    return in_scope(as_written, roots) and in_scope(os.path.realpath(absolute), roots)
 
 
 def check(payload: dict[str, Any]) -> None:
@@ -44,8 +62,7 @@ def check(payload: dict[str, Any]) -> None:
         return
     path = str((payload.get("tool_input") or {}).get(PATH_KEYS[tool], ""))
     root = os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd()
-    rel = relative_to_root(path, payload.get("cwd") or root, root) if path else None
-    if rel is None or not rel.startswith(ALLOWED_DIRS):
+    if not path or not allowed(path, payload.get("cwd") or root, root):
         raise BlockedError(f"'{path}' is outside {' and '.join(ALLOWED_DIRS)}")
 
 

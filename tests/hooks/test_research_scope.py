@@ -1,12 +1,15 @@
 """research_scope.py keeps the optimizer's edits in research code (plan §8.3; 0009)."""
 
+import importlib.util
 import os
+from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import pytest
 
-from hooks.hookrun import run_hook, tool_payload
+from hooks.hookrun import HOOKS_DIR, run_hook, tool_payload
 
 HOOK = "research_scope.py"
 
@@ -80,6 +83,48 @@ def test_absolute_and_parent_relative_paths_inside_scope_are_allowed(scoped: Pat
 )
 def test_everything_else_is_blocked(scoped: Path, tool: str, path: str) -> None:
     assert scope(scoped, tool, path) == 2
+
+
+def load_hook() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("research_scope", HOOKS_DIR / HOOK)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def canonical_case(real: Callable[[str], str]) -> Callable[[str], str]:
+    """A realpath that also corrects the case of existing components, as Windows does."""
+
+    def realpath(path: str) -> str:
+        resolved = Path(real(path))
+        canonical = Path(resolved.anchor)
+        for part in resolved.parts[1:]:
+            names = (
+                {p.name.lower(): p.name for p in canonical.iterdir()} if canonical.is_dir() else {}
+            )
+            canonical /= names.get(part.lower(), part)
+        return str(canonical)
+
+    return realpath
+
+
+@pytest.mark.parametrize(
+    "path", ["SRC/Tiferet/Research/walk_forward.py", "Research\\Strategies\\ma10.py"]
+)
+def test_wrong_case_is_blocked_when_realpath_corrects_case(
+    scoped: Path, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    hook = load_hook()
+    windows_realpath = canonical_case(os.path.realpath)
+    assert windows_realpath(str(scoped / "SRC" / "Tiferet" / "Research" / "x.py")) == str(
+        scoped / "src" / "tiferet" / "research" / "x.py"
+    )
+    monkeypatch.setattr(os.path, "realpath", windows_realpath)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(scoped))
+    hook.check(tool_payload("Edit", edit("Edit", "src/tiferet/research/walk_forward.py"), scoped))
+    with pytest.raises(hook.BlockedError):
+        hook.check(tool_payload("Edit", edit("Edit", path), scoped))
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlinks need extra privileges on Windows")
