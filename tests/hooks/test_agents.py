@@ -116,6 +116,21 @@ def test_reviewers_return_a_verdict_with_numbered_findings(name: str) -> None:
     assert "\n1. " in body
 
 
+def test_quant_referee_judges_against_the_benchmark_not_the_reference() -> None:
+    _, body = parse("quant-referee")
+    assert "The verdict test is against the benchmark in `research/preregistration.yaml`" in body
+    assert "context, not a pass/fail test" in body
+
+
+def test_tax_auditor_covers_loss_pots_freigrenze_and_vorabpauschale_exemption() -> None:
+    _, body = parse("tax-auditor")
+    assert "§23(3) EStG Freigrenze" in body
+    assert "above it the full gain is taxable" in body
+    assert "on gains and losses and on the Vorabpauschale" in body
+    assert "Two separate loss pots" in body
+    assert "§20(6) EStG" in body
+
+
 def test_tax_auditor_reports_unfetchable_sources_with_the_url() -> None:
     _, body = parse("tax-auditor")
     assert "WebFetch" in body

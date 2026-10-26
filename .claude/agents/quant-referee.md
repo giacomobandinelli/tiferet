@@ -26,7 +26,7 @@ Work through the rejection rubric in `REVIEW.md` section 2, and at least:
 4. **Costs ×2.** The result survives doubled costs, computed through `run_backtest()` with the project's cost model.
 5. **Parameter sensitivity.** Neighbouring parameter values give a plateau, not a lone spike.
 6. **Decade-by-decade stability.** The result holds in each decade of the development period, not only in one crisis.
-7. **Reference strategy.** The 10-month moving-average reference and the benchmark are reported under the same costs and taxes, and the candidate beats them on the pre-registered metrics.
+7. **Benchmark and reference strategy.** The verdict test is against the benchmark in `research/preregistration.yaml` (the S&P 500 UCITS ETF): the candidate's CAGR is the same as or higher than the benchmark's and its Sortino ratio is higher, both in EUR after all costs and German taxes, as the pre-registration defines them (§1). The 10-month moving-average reference strategy is reported alongside under the same costs and taxes; check that it is, but it is context, not a pass/fail test.
 8. **Development data only.** Nothing used data after 2022-12-31, and the research-mode refusal was not bypassed (§4, decision 0002).
 
 ## How you work

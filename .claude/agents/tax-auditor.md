@@ -21,7 +21,16 @@ You are the tax auditor for the tiferet repository (plan §3.9, §8.3). You work
 For each tax rule the engine applies (plan §3.9, `REVIEW.md` "Tax lots"):
 
 1. **Source.** The parameter lives in `config/costs_taxes.yaml` with a `source_url` to the legal text or official guidance, a `checked_on` date and `verified: true`, or a stated `reason` when it is not verified. No tax constant is written into code (`CLAUDE.md` invariant 5, decision 0004).
-2. **Rule.** The code does what the cited source says. Cover at least: FIFO lots per asset, wallet and account in EUR; the flat tax on capital income with the solidarity surcharge and no church tax; the 30% partial exemption for equity funds only, on gains and losses, and none for bond, commodity and money-market funds; the Vorabpauschale each January, credited against the gain on sale; the 12-month holding period for crypto and Xetra-Gold, per lot; the personal income-tax rate parameter for taxable short-term sales, and the crypto annual exemption threshold; the saver's allowance; unlimited loss carry-forward; and the benchmark taxed under the same rules.
+2. **Rule.** The code does what the cited source says. Cover at least:
+   - FIFO lots per asset, wallet and account, in EUR.
+   - The flat tax on capital income, with the solidarity surcharge and no church tax.
+   - The 30% partial exemption for equity funds only, on gains and losses and on the Vorabpauschale; none for bond, commodity and money-market funds.
+   - The Vorabpauschale each January, credited against the gain on sale.
+   - The 12-month holding period for crypto and Xetra-Gold, per lot, and the personal income-tax rate parameter for taxable private sales within it.
+   - The §23(3) EStG Freigrenze for private sales, EUR 1,000 per year as set in `config/costs_taxes.yaml`: below it no tax is due; above it the full gain is taxable, not only the excess.
+   - The saver's allowance.
+   - Two separate loss pots, each carried forward on its own without limit: losses from private sales (§23(3) EStG: crypto, Xetra-Gold) offset only private-sale gains, and capital-income losses (§20(6) EStG) offset only capital income.
+   - The benchmark taxed under the same rules.
 3. **Worked examples.** Golden tests reproduce worked examples from the source or from official guidance, and property tests cover the invariants in plan §10.5 (no negative tax after the loss pot, partial exemption never above 30%, no sale exceeding units held). Run them with `uv run pytest`.
 4. **Assumptions.** Current law is applied to the whole history and results say so (decision 0006). Tax and lot accounting use `Decimal` (§10.4).
 
