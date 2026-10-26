@@ -1,23 +1,29 @@
-"""PreToolUse hook: protect the pre-registration and the locked tests (plan §4, §8.1, §8.2).
+"""PreToolUse hook: protect the pre-registration and the tagged locked tests (plan §4, §8.1, §8.2).
 
 Registered for Edit, Write, MultiEdit, NotebookEdit and Bash. Protected targets are
-`research/preregistration.yaml` and every existing file in `tests/locked/`.
+`research/preregistration.yaml` and every path under `tests/locked/` that is in a git tag
+matching `locked/*` (decision 0011). Untagged files in `tests/locked/` are drafts and may be
+edited, moved or deleted.
 
-- Edit, MultiEdit and NotebookEdit on a protected target are blocked.
-- Write is blocked when the target exists. Creating a new file is allowed: a draft test in
-  `tests/locked/` for the owner to approve, or the empty pre-registration template when none
+- Edit, MultiEdit, NotebookEdit and Write on a protected target are blocked, also when a tagged
+  file is missing from disk. Write may create the empty pre-registration template when none
   exists.
-- A Bash command that names a protected target is allowed only when every part of it is
-  read-only (cat, grep, git diff, pytest, ...). A redirection into a protected target is
-  blocked unless it creates a new file in `tests/locked/`.
+- A Bash command that names a protected target, or a directory holding one, is allowed only
+  when every part of it is read-only (cat, grep, git diff, pytest, ...). A redirection into a
+  protected target is blocked.
+- A Bash command that creates, deletes, moves or rewrites a `locked/*` tag is blocked: agents
+  never manage those tags.
+
+The tagged paths are read with `git tag --list` and `git ls-tree`, only when a request touches
+`tests/locked`. If git cannot be run or answers with an error, the request is blocked.
 
 BlockedError calls exit with code 2 and the reason on stderr. Paths are resolved against the
 session's working directory, `cd` is followed, symlinks are resolved, and comparison ignores
 case and slash direction.
 
 The hook applies to every session that loads the project settings, local and cloud. Hooks
-can be bypassed, so the binding protection is the CI check that fails if either target
-changes after its tagged commit (§8.2). The hook uses only the standard library.
+can be bypassed, so the binding protections are the CI check that fails if a tagged file
+changes and the repository's tag ruleset (§8.2, 0011). The hook uses only the standard library.
 """
 
 from __future__ import annotations
@@ -26,12 +32,17 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 from fnmatch import fnmatchcase
 from typing import Any
 
 PREREG = "research/preregistration.yaml"
 LOCKED = "tests/locked"
+TAG_PATTERN = "locked/*"
+TAG_PREFIX = "locked/"
+TAG_REF = "refs/tags/locked/"
+GIT_TIMEOUT = 10
 FILE_TOOLS = {"Edit": "file_path", "MultiEdit": "file_path", "Write": "file_path"}
 FILE_TOOLS["NotebookEdit"] = "notebook_path"
 SEPARATORS = {";", "&", "&&", "||", "|", "|&", "(", ")"}
@@ -43,9 +54,15 @@ READ_ONLY = {
     "true", "test", "[", "pwd", "pytest", "mypy", "cd",
 }  # fmt: skip
 READ_ONLY_GIT = {"status", "diff", "log", "show", "blame", "ls-files", "add", "commit"}
+GIT_OPTIONS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
+TAG_LIST_FLAGS = {"-l", "--list", "-v", "--verify"}
+TAG_WRITE_FLAGS = {"-d", "--delete", "-f", "--force"}
 FIND_WRITES = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprintf"}
 ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 HEREDOC_START = re.compile(r"<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?")
+LOCKED_MENTION = re.compile(r"(?<![\w.-])tests/locked(?:/[^\s'\"`;&|<>()]*)?(?![\w.-])")
+GLOB_CHARS = set("*?[")
+TAG_STORE = (".git/refs/tags/locked", ".git/packed-refs")
 
 
 class BlockedError(Exception):
@@ -88,27 +105,80 @@ class Paths:
         return True
 
 
-def is_protected(rel: str | None) -> bool:
-    return rel is not None and (rel in (PREREG, LOCKED) or rel.startswith(LOCKED + "/"))
+def under_locked(rel: str) -> bool:
+    return rel == LOCKED or rel.startswith(LOCKED + "/")
 
 
-def glob_is_protected(rel: str | None) -> bool:
-    if rel is None:
-        return False
-    samples = (PREREG, LOCKED, f"{LOCKED}/test_example.py")
-    return any(fnmatchcase(sample, rel) for sample in samples)
+def may_hold_locked(rel: str) -> bool:
+    """True for `tests/locked`, a path below it, or a directory above it other than the root."""
+    return under_locked(rel) or LOCKED.startswith(rel + "/")
 
 
-def is_new_locked_file(paths: Paths, absolute: str) -> bool:
-    rel = paths.relative(absolute)
-    return rel is not None and rel.startswith(LOCKED + "/") and not paths.exists(absolute)
+class Protection:
+    """Decides which project-relative paths are protected, reading the tags at most once."""
+
+    def __init__(self, root: str) -> None:
+        self.root = root
+        self._tagged: frozenset[str] | None = None
+
+    def git(self, *args: str) -> str:
+        try:
+            result = subprocess.run(
+                ["git", "-C", self.root, *args],
+                capture_output=True,
+                timeout=GIT_TIMEOUT,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise BlockedError(f"could not read the locked/* tags ({error})") from error
+        if result.returncode != 0:
+            message = result.stderr.decode("utf-8", "replace").strip()
+            raise BlockedError(f"could not read the locked/* tags (git {args[0]}: {message})")
+        try:
+            return result.stdout.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise BlockedError(f"could not read the locked/* tags ({error})") from error
+
+    def tagged(self) -> frozenset[str]:
+        """Lowercased paths under `tests/locked/` in any `locked/*` tag, with their parents."""
+        if self._tagged is None:
+            found: set[str] = set()
+            for tag in self.git("tag", "--list", "--ignore-case", TAG_PATTERN).split():
+                listing = self.git("ls-tree", "-r", "-z", "--name-only", f"refs/tags/{tag}")
+                for path in listing.split("\0"):
+                    path = path.lower()
+                    if path.startswith(LOCKED + "/"):
+                        parts = path.split("/")
+                        found.update("/".join(parts[:n]) for n in range(1, len(parts) + 1))
+            self._tagged = frozenset(found)
+        return self._tagged
+
+    def covers(self, rel: str | None) -> bool:
+        """True for the pre-registration, a tagged file, or a directory holding one."""
+        if rel is None:
+            return False
+        if rel == PREREG:
+            return True
+        return may_hold_locked(rel) and rel in self.tagged()
+
+    def covers_glob(self, rel: str | None) -> bool:
+        """True if a wildcard path can match the pre-registration or a tagged path."""
+        if rel is None:
+            return False
+        if fnmatchcase(PREREG, rel):
+            return True
+        literal = re.split(r"[*?\[]", rel, maxsplit=1)[0]
+        if not (literal.startswith(LOCKED + "/") or (LOCKED + "/").startswith(literal)):
+            return False
+        return any(fnmatchcase(path, rel) for path in self.tagged())
 
 
-def check_file_tool(tool: str, path: str, cwd: str, paths: Paths) -> None:
+def check_file_tool(tool: str, path: str, cwd: str, paths: Paths, guard: Protection) -> None:
     absolute = paths.absolute(path, cwd)
-    if not is_protected(paths.relative(absolute)):
+    rel = paths.relative(absolute)
+    if not guard.covers(rel):
         return
-    if tool == "Write" and not paths.exists(absolute):
+    if rel == PREREG and tool == "Write" and not paths.exists(absolute):
         return
     raise BlockedError(f"'{path}' is protected; only the owner changes it")
 
@@ -148,6 +218,17 @@ def split_segments(tokens: list[str]) -> list[list[str]]:
     return [segment for segment in segments if segment]
 
 
+def git_subcommand(rest: list[str]) -> tuple[str, list[str]]:
+    """The git subcommand, lowercased, and its arguments, skipping global options."""
+    args = iter(rest)
+    for arg in args:
+        if arg in GIT_OPTIONS_WITH_VALUE:
+            next(args, "")
+        elif not arg.startswith("-"):
+            return arg.lower(), list(args)
+    return "", []
+
+
 def is_read_only(args: list[str]) -> bool:
     if not args:
         return True
@@ -158,8 +239,8 @@ def is_read_only(args: list[str]) -> bool:
     if name == "find":
         return not FIND_WRITES.intersection(a.lower() for a in rest)
     if name == "git":
-        sub = [a for a in rest if not a.startswith("-")]
-        return bool(sub) and sub[0].lower() in READ_ONLY_GIT
+        sub, _ = git_subcommand(rest)
+        return sub in READ_ONLY_GIT
     if name == "ruff":
         lowered = [a.lower() for a in rest]
         if "check" in lowered:
@@ -178,9 +259,53 @@ def is_read_only(args: list[str]) -> bool:
     return False
 
 
-def check_command(command: str, cwd: str, paths: Paths) -> None:
+def names_locked_tag(arg: str) -> bool:
+    """True if a tag name, ref or refspec names a `locked/*` tag."""
+    for side in arg.lower().lstrip("+").split(":"):
+        if side.startswith(TAG_PREFIX) or TAG_REF in side:
+            return True
+    return False
+
+
+def has_short_flag(args: list[str], flag: str) -> bool:
+    return any(a.startswith("-") and not a.startswith("--") and flag in a[1:] for a in args)
+
+
+def check_tag_change(args: list[str]) -> None:
+    """Block git commands that create, delete, move or rewrite a `locked/*` tag (0011)."""
+    if not args or os.path.basename(args[0]).lower().removesuffix(".exe") != "git":
+        return
+    sub, rest = git_subcommand(args[1:])
+    lowered = [a.lower() for a in rest]
+    options = {a.split("=")[0] for a in lowered if a.startswith("-")}
+    positional = [a for a in rest if not a.startswith("-")]
+    reason = ""
+    if sub == "tag":
+        listing = bool(TAG_LIST_FLAGS & options) and not TAG_WRITE_FLAGS & options
+        if not listing and any(names_locked_tag(a) for a in positional):
+            reason = "the command changes a locked/* tag"
+    elif sub == "push":
+        if {"--mirror", "--prune"} & options or any(names_locked_tag(a) for a in positional):
+            reason = "the command pushes or deletes locked/* tags"
+    elif sub == "update-ref":
+        if "--stdin" in options or any(TAG_REF in a for a in lowered):
+            reason = "the command rewrites a locked/* tag ref"
+    elif sub in ("fetch", "pull"):
+        prunes = "--prune-tags" in options or has_short_flag(rest, "P")
+        forced_tags = any(a.startswith("+") and "refs/tags/" in a for a in lowered)
+        if prunes or forced_tags or any(TAG_REF in a for a in lowered):
+            reason = "the command can delete or move locked/* tags"
+    if reason:
+        raise BlockedError(f"{reason}; agents never manage locked/* tags (decision 0011)")
+
+
+def check_command(command: str, cwd: str, paths: Paths, guard: Protection) -> None:
     lowered = command.lower().replace("\\", "/")
-    mentioned = "preregistration.yaml" in lowered or LOCKED in lowered
+    named: list[str | None] = []
+    globs: list[str | None] = []
+    if "preregistration.yaml" in lowered:
+        named.append(PREREG)
+    named.extend(mention.rstrip("/") for mention in LOCKED_MENTION.findall(lowered))
     writes = False
     for segment in split_segments(tokenize(command)):
         args: list[str] = []
@@ -188,30 +313,32 @@ def check_command(command: str, cwd: str, paths: Paths) -> None:
         for token in tokens:
             if token in WRITE_REDIRECTS:
                 target = next(tokens, "")
-                absolute = paths.absolute(target, cwd)
-                if is_protected(paths.relative(absolute)):
-                    if not is_new_locked_file(paths, absolute):
-                        raise BlockedError(f"the command writes to protected file '{target}'")
-                    mentioned = True
+                if guard.covers(paths.relative(paths.absolute(target, cwd))):
+                    raise BlockedError(f"the command writes to protected file '{target}'")
+                writes = True
             elif token in READ_REDIRECTS:
                 next(tokens, "")
             elif args or not ENV_ASSIGNMENT.match(token):
                 args.append(token)
         if not args:
             continue
+        check_tag_change(args)
         for arg in args[1:]:
             if arg.startswith("-"):
                 continue
             rel = paths.relative(paths.absolute(arg, cwd))
-            if is_protected(rel) or (set("*?[") & set(arg) and glob_is_protected(rel)):
-                mentioned = True
+            (globs if GLOB_CHARS & set(arg) else named).append(rel)
         cwd_rel = paths.relative(cwd)
-        if cwd_rel is not None and is_protected(cwd_rel):
-            mentioned = True
+        if cwd_rel is not None and under_locked(cwd_rel):
+            named.append(cwd_rel)
         writes = writes or not is_read_only(args)
         if args[0] == "cd":
             cwd = paths.absolute(args[1], cwd) if len(args) > 1 else paths.root
-    if mentioned and writes:
+    if not writes:
+        return
+    if any(store in lowered for store in TAG_STORE):
+        raise BlockedError("the command writes git's tag store; agents never manage tags")
+    if any(guard.covers(rel) for rel in named) or any(guard.covers_glob(rel) for rel in globs):
         raise BlockedError("the command names a protected file and is not read-only")
 
 
@@ -221,10 +348,11 @@ def check(payload: dict[str, Any]) -> None:
     root = os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd()
     cwd = payload.get("cwd") or root
     paths = Paths(root)
+    guard = Protection(paths.root)
     if tool in FILE_TOOLS:
-        check_file_tool(tool, str(tool_input.get(FILE_TOOLS[tool], "")), cwd, paths)
+        check_file_tool(tool, str(tool_input.get(FILE_TOOLS[tool], "")), cwd, paths, guard)
     elif tool == "Bash":
-        check_command(str(tool_input.get("command", "")), cwd, paths)
+        check_command(str(tool_input.get("command", "")), cwd, paths, guard)
 
 
 def main() -> int:
@@ -235,9 +363,9 @@ def main() -> int:
         check(payload)
     except BlockedError as reason:
         print(
-            f"prereg_guard: blocked, {reason}. research/preregistration.yaml and existing "
-            "files in tests/locked/ are owner-approved and not edited by agents; new drafts "
-            "in tests/locked/ are created with the Write tool (CLAUDE.md invariant 3, plan §4).",
+            f"prereg_guard: blocked, {reason}. research/preregistration.yaml and files in a "
+            "locked/* tag are owner-approved and not edited by agents; untagged drafts in "
+            "tests/locked/ may change (CLAUDE.md invariant 3, plan §4, decision 0011).",
             file=sys.stderr,
         )
         return 2
