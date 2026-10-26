@@ -99,7 +99,7 @@ Backtest runs also write their receipt to the trial ledger. (§8.5)
 
 ## Hooks and permissions
 
-`.claude/settings.json` registers four standard-library Python hooks from `.claude/hooks/`, each started with `uv run python` in exec form (`"command": "uv"` with an `args` list). Claude Code substitutes `${CLAUDE_PROJECT_DIR}` itself and no shell is involved, so the hooks run the same under Git Bash, PowerShell and `sh` (§8.2). Tests for them are in `tests/hooks/`.
+`.claude/settings.json` registers four standard-library Python hooks from `.claude/hooks/` for every session and agent, each started with `uv run python` in exec form (`"command": "uv"` with an `args` list). Claude Code substitutes `${CLAUDE_PROJECT_DIR}` itself and no shell is involved, so the hooks run the same under Git Bash, PowerShell and `sh` (§8.2). Tests for them are in `tests/hooks/`.
 
 | Hook | Event | Behaviour |
 | --- | --- | --- |
@@ -111,6 +111,21 @@ Backtest runs also write their receipt to the trial ledger. (§8.5)
 `permissions.deny` refuses pushes to `main` and force pushes (agents push their own branches for pull requests), edits to the pre-registration, and reads of `data/holdout`.
 
 Hooks and permission rules apply in every session that loads the project settings, local and cloud. Hooks can be bypassed, so the binding protections are still the code and CI checks: the point-in-time loader's holdout refusal, the locked tests, the CI check on tagged protected files, and the holdout's encryption (§8.2). The vault guard blocks access, not words: commit messages, test names and searches for `holdout`, `unseal` or the flag's name are allowed (0008). The pre-registration guard blocks a Bash command that names a protected file and also writes anything, so keep such commands separate from writes such as `git push`.
+
+## Agents
+
+Six project subagents live in `.claude/agents/` (§8.3, §8.6). Their frontmatter pins name, tools, model and effort, and adds agent-scoped hooks on top of the project hooks above (0009). `tests/hooks/test_agents.py` pins all of it.
+
+| Agent | Model, effort | Tools | Agent-scoped hooks | Responsibility |
+| --- | --- | --- | --- | --- |
+| `builder` | sonnet, medium | Edit, Write, Bash, read tools | `test_gate.py` on stop | Implements an agreed plan only; ends with a change receipt |
+| `optimizer` | opus, high | Edit, Write, Bash, read tools | `research_scope.py`, `readonly_bash.py`, `test_gate.py` on stop | Strategies inside the pre-registered space, development data only, every backtest through `run_backtest()`; edits only `src/tiferet/research/` and `research/strategies/` |
+| `quant-referee` | opus, high | Read, Grep, Glob, Bash | `readonly_bash.py` | Tries to break a result with the `REVIEW.md` rubric; accept or reject with numbered findings |
+| `tax-auditor` | opus, high | Read, Grep, Glob, Bash, WebFetch | `readonly_bash.py` | Checks each tax rule against its fetched source in `config/costs_taxes.yaml` and worked examples; an unfetchable source is "not verified against source" with the URL tried |
+| `data-auditor` | haiku, low | Read, Grep, Glob, Bash | `readonly_bash.py` | Checks gaps, outliers, units, publication dates and `known_at` |
+| `fixer` | sonnet, medium | Edit, Write, Bash, read tools | `test_gate.py` on stop | Applies numbered findings one by one; reports each as fixed or not fixed with the reason |
+
+`readonly_bash.py` allows only allowlisted commands that write no files (tests, `python -m tiferet`, lint and type checks, read-only `git` and shell). `research_scope.py` blocks file changes outside the optimizer's two directories. No agent commits, pushes or opens a pull request unless its task says so.
 
 ## Models and effort
 
