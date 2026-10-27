@@ -9,11 +9,14 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from email.message import Message
+from pathlib import Path
 from types import TracebackType
 from typing import Any
 
 import pytest
+import truststore
 
+from tiferet.data import fetch
 from tiferet.data.fetch import (
     ACCEPT,
     USER_AGENT,
@@ -24,6 +27,7 @@ from tiferet.data.fetch import (
     api_key,
     build_url,
     redact,
+    tls_context,
 )
 
 URL = "https://api.example.org/series"
@@ -282,3 +286,45 @@ def test_key_in_the_url_is_redacted_from_the_server_text() -> None:
     with pytest.raises(FetchError) as raised:
         fetcher(opener, clock).get(f"{URL}?api_key={KEY}")
     assert KEY not in str(raised.value) and raised.value.detail == "Key REDACTED rejected"
+
+
+def https_context(fetcher: HttpFetcher) -> object:
+    """The SSL context of the fetcher's HTTPS handler."""
+    handlers = [h for h in fetcher._opener.handlers if isinstance(h, urllib.request.HTTPSHandler)]  # type: ignore[attr-defined]
+    assert len(handlers) == 1
+    return getattr(handlers[0], "_context", None)
+
+
+def test_tls_context_verifies_against_the_operating_system_store() -> None:
+    context = tls_context()
+    assert isinstance(context, truststore.SSLContext)
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
+
+
+def test_default_fetcher_uses_a_verifying_system_store_context() -> None:
+    context = https_context(HttpFetcher())
+    assert isinstance(context, truststore.SSLContext)
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
+
+
+def test_default_fetcher_takes_its_context_from_tls_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    monkeypatch.setattr(fetch, "tls_context", lambda: marker)
+    assert https_context(HttpFetcher()) is marker
+
+
+def test_verification_is_never_switched_off_in_the_package() -> None:
+    forbidden = [
+        "CERT_NONE",
+        "_create_unverified_context",
+        "check_hostname = False",
+        "verify=False",
+    ]
+    root = Path(fetch.__file__).resolve().parents[1]
+    for path in root.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        assert [word for word in forbidden if word in text] == [], path.name

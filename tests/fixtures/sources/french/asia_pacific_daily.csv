@@ -1,0 +1,9 @@
+This file was created using a synthetic test database. Daily returns are for synthetic markets.
+The Tbill return is from a synthetic source.
+,Mkt-RF,SMB,HML,RF
+20220929,   -1.11,    0.30,   -0.42,    0.005
+20220930,    0.51,   -0.22,    0.60,    0.005
+20221003,    1.45,    0.67,   -0.37,    0.006
+20221031,   -1.81,   -0.15,    0.24,    0.006
+
+Copyright 2022 Synthetic Fixture

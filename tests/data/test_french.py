@@ -6,10 +6,10 @@ import pandas as pd
 import pytest
 
 from data.adapter_support import (
-    FIXTURES,
     FakeFetcher,
     assert_partitioned,
     fixture,
+    french_variant,
     known_at,
     production_view,
     research_view,
@@ -17,7 +17,7 @@ from data.adapter_support import (
     snapshot,
     utc,
 )
-from fixtures.build_sources import FRENCH_ZIPS, zip_csv
+from fixtures.build_sources import FRENCH_ZIPS
 from tiferet.data import french
 from tiferet.data.adapter import Batch, ingest
 from tiferet.data.errors import DataLossError, SourceFormatError
@@ -40,14 +40,6 @@ def run(tmp_path: Path, zips: dict[str, bytes] = ZIPS) -> Batch:
     batch = french.collect(fetcher(zips), sources(), smoke=False)
     ingest(batch, silver_roots(tmp_path), tmp_path / "bronze", max_row_loss=0.001)
     return batch
-
-
-def variant(archive: str, old: str, new: str) -> bytes:
-    """The archive's CSV with `old` replaced by `new`, zipped again."""
-    source, member = FRENCH_ZIPS[archive]
-    text = (FIXTURES / "french" / source).read_text(encoding="latin-1")
-    assert old in text
-    return zip_csv(text.replace(old, new), member)
 
 
 def series(silver: pd.DataFrame, series_id: str) -> pd.DataFrame:
@@ -97,18 +89,23 @@ def test_output_passes_pit_get_and_respects_the_holdout_boundary(tmp_path: Path)
 @pytest.mark.parametrize(
     ("archive", "old", "new", "message"),
     [
-        ("F-F_Research_Data_Factors_CSV.zip", ",Mkt-RF,SMB", ",MktRF,SMB", "lacks columns"),
+        (
+            "F-F_Research_Data_Factors_CSV.zip",
+            ",Mkt-RF,SMB",
+            ",MktRF,SMB",
+            "no table with monthly dates",
+        ),
         (
             "49_Industry_Portfolios_CSV.zip",
             "Average Value Weighted Returns -- Monthly",
             "Average Value Weighted Returns -- Quarterly",
-            "0 sections titled",
+            "0 tables titled",
         ),
         (
             "49_Industry_Portfolios_CSV.zip",
-            "Average Value Weighted Returns -- Annual",
-            "Average Value Weighted Returns -- Monthly",
-            "2 sections titled",
+            "Average Equal Weighted Returns -- Monthly",
+            "Average Value Weight Returns -- Monthly",
+            "2 tables titled",
         ),
         ("F-F_Research_Data_Factors_daily_CSV.zip", "20220930,", "2022930,", "not daily"),
         ("F-F_Research_Data_Factors_CSV.zip", "    2.81,", "    2.81,    1.00,", "width differs"),
@@ -121,7 +118,7 @@ def test_format_errors_write_nothing(
     run(tmp_path)
     before = snapshot(tmp_path)
     with pytest.raises(SourceFormatError, match=f"french: .*{message}"):
-        run(tmp_path, {**ZIPS, archive: variant(archive, old, new)})
+        run(tmp_path, {**ZIPS, archive: french_variant(archive, old, new)})
     assert snapshot(tmp_path) == before
 
 
@@ -136,7 +133,152 @@ def test_truncated_download_is_refused_and_files_are_kept(tmp_path: Path) -> Non
     run(tmp_path)
     before = snapshot(tmp_path)
     archive = "F-F_Research_Data_Factors_CSV.zip"
-    truncated = variant(archive, "202211,    4.60,   -3.40,    1.38,    0.29\n", "")
+    truncated = french_variant(archive, "202211,    4.60,   -3.40,    1.38,    0.29\n", "")
     with pytest.raises(DataLossError, match="kf_us3_mkt_rf_m: 1 observation dates"):
         run(tmp_path, {**ZIPS, archive: truncated})
     assert snapshot(tmp_path) == before
+
+
+def ids_of(silver: pd.DataFrame, prefix: str) -> set[str]:
+    return {s for s in silver["series_id"].unique() if s.startswith(prefix)}
+
+
+def test_size_deciles_are_one_series_whatever_the_file_calls_them() -> None:
+    """The monthly file writes "2-Dec", the daily file "Dec 2"; both are `dec2`."""
+    silver = french.collect(fetcher(), sources(), smoke=False).silver
+    deciles = ["lo10", *(f"dec{n}" for n in range(2, 10)), "hi10"]
+    assert ids_of(silver, "kf_size_") == {
+        f"kf_size_{key}_{frequency}" for key in deciles for frequency in "md"
+    }
+    assert len(series(silver, "kf_size_dec2_m")) == 4
+    assert len(series(silver, "kf_size_dec2_d")) == 4
+
+
+def test_unused_size_columns_are_not_series() -> None:
+    silver = french.collect(fetcher(), sources(), smoke=False).silver
+    assert not ids_of(silver, "kf_size_le0") | ids_of(silver, "kf_size_qnt")
+
+
+@pytest.mark.parametrize(
+    ("archive", "series_id"),
+    [
+        ("Portfolios_Formed_on_ME_CSV.zip", "kf_size_hi10_m"),  # "Weight", leading "Average"
+        ("Portfolios_Formed_on_ME_Daily_CSV.zip", "kf_size_hi10_d"),  # "Weighted"
+        ("49_Industry_Portfolios_daily_CSV.zip", "kf_ind49_agric_d"),
+    ],
+)
+def test_returns_tables_are_found_by_their_real_titles(archive: str, series_id: str) -> None:
+    silver = french.collect(fetcher(), sources(), smoke=False).silver
+    assert len(series(silver, series_id)) > 0
+
+
+@pytest.mark.parametrize(
+    ("archive", "old", "new", "series_id"),
+    [
+        (
+            "49_Industry_Portfolios_CSV.zip",
+            "Average Value Weighted Returns -- Monthly",
+            "  VALUE   weight  returns -- MONTHLY ",
+            "kf_ind49_agric_m",
+        ),
+        (
+            "Portfolios_Formed_on_ME_CSV.zip",
+            "Average Value Weight Returns -- Monthly",
+            "Value Weighted Returns -- Monthly",
+            "kf_size_dec2_m",
+        ),
+    ],
+    ids=["case-and-spaces", "weighted-without-average"],
+)
+def test_title_wording_does_not_matter(archive: str, old: str, new: str, series_id: str) -> None:
+    zips = {**ZIPS, archive: french_variant(archive, old, new)}
+    silver = french.collect(fetcher(zips), sources(), smoke=False).silver
+    assert len(series(silver, series_id)) > 0
+
+
+def test_equal_weighted_tables_are_not_taken_for_value_weighted() -> None:
+    archive = "49_Industry_Portfolios_CSV.zip"
+    zips = {
+        **ZIPS,
+        archive: french_variant(
+            archive,
+            "Average Value Weighted Returns -- Monthly",
+            "Average Value Weighted Returns -- Quarterly",
+        ),
+    }
+    with pytest.raises(SourceFormatError, match="0 tables titled"):
+        french.collect(fetcher(zips), sources(), smoke=False)
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        ",Mkt-RF,SMB,HML,RF",
+        "  ,Mkt-RF,SMB,HML,RF  ",
+        "Mkt-RF,SMB,HML,RF",
+        "  Mkt-RF , SMB , HML , RF   ",
+        "\t,Mkt-RF,SMB,HML,RF\t",
+    ],
+    ids=["comma", "padded", "no-comma", "no-comma-padded", "tabs"],
+)
+@pytest.mark.parametrize(
+    "archive", ["F-F_Research_Data_Factors_CSV.zip", "F-F_Research_Data_Factors_daily_CSV.zip"]
+)
+def test_header_line_tolerates_whitespace_and_a_missing_comma(archive: str, header: str) -> None:
+    expected = french.collect(fetcher(), sources(), smoke=False).silver
+    zips = {**ZIPS, archive: french_variant(archive, "\n,Mkt-RF,SMB,HML,RF\n", f"\n{header}\n")}
+    silver = french.collect(fetcher(zips), sources(), smoke=False).silver
+    pd.testing.assert_frame_equal(silver, expected)
+
+
+def test_factor_table_has_no_title_and_follows_a_note() -> None:
+    archive = "F-F_Research_Data_Factors_CSV.zip"
+    text = french.read_csv(ZIPS[archive], archive)
+    found = french.tables(text)
+    assert [t.title for t in found] == [
+        "Missing data are indicated by -99.99.",
+        "Annual Factors: January-December",
+    ]
+    assert [t.date_width for t in found] == [6, 4]
+
+
+def test_the_first_factor_table_of_the_right_width_is_used() -> None:
+    archive = "Asia_Pacific_ex_Japan_3_Factors_Daily_CSV.zip"
+    extra = "\n,Mkt-RF,SMB,HML,RF\n20221101,    9.00,    9.00,    9.00,    9.00\n"
+    zips = {**ZIPS, archive: french_variant(archive, "\nCopyright", f"{extra}\nCopyright")}
+    silver = french.collect(fetcher(zips), sources(), smoke=False).silver
+    assert len(series(silver, "kf_apxj3_smb_d")) == 4
+    assert series(silver, "kf_apxj3_smb_d")["value"].max() < 0.05
+
+
+def test_headerless_factor_table_is_refused_and_named() -> None:
+    archive = "Asia_Pacific_ex_Japan_3_Factors_Daily_CSV.zip"
+    zips = {**ZIPS, archive: french_variant(archive, ",Mkt-RF,SMB,HML,RF\n", "")}
+    with pytest.raises(SourceFormatError, match="1 tables of that date width have no header"):
+        french.collect(fetcher(zips), sources(), smoke=False)
+
+
+def test_header_of_the_wrong_width_is_not_taken_for_a_header() -> None:
+    archive = "Asia_Pacific_ex_Japan_3_Factors_Daily_CSV.zip"
+    zips = {**ZIPS, archive: french_variant(archive, ",Mkt-RF,SMB,HML,RF\n", "Mkt-RF,SMB,HML\n")}
+    with pytest.raises(SourceFormatError, match="no table with daily dates"):
+        french.collect(fetcher(zips), sources(), smoke=False)
+
+
+@pytest.mark.parametrize(
+    ("archive", "old", "new", "message"),
+    [
+        ("Portfolios_Formed_on_ME_CSV.zip", "Hi 10", "Hi/10", r"unknown column headers \['Hi/10'"),
+        ("Portfolios_Formed_on_ME_CSV.zip", ",Hi 10", ",Hi (10)", "unknown column headers"),
+        ("Portfolios_Formed_on_ME_Daily_CSV.zip", "Dec 3", "Dec 2", r"repeat \['dec2'\]"),
+        ("Portfolios_Formed_on_ME_CSV.zip", ",3-Dec", ",Dec 2", r"repeat \['dec2'\]"),
+        ("Portfolios_Formed_on_ME_CSV.zip", "Lo 10,", "Lo 11,", "lacks columns"),
+    ],
+    ids=["slash", "bracket", "repeated-daily", "alias-collides", "missing-column"],
+)
+def test_unknown_or_repeated_headers_are_refused(
+    archive: str, old: str, new: str, message: str
+) -> None:
+    zips = {**ZIPS, archive: french_variant(archive, old, new)}
+    with pytest.raises(SourceFormatError, match=f"french: .*{message}"):
+        french.collect(fetcher(zips), sources(), smoke=False)

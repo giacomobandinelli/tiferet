@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from fixtures.build_sources import FRENCH_ZIPS, zip_csv
 from tiferet.data.fetch import Download, build_url, redact
 from tiferet.data.pit import Mode, get
 from tiferet.data.silver import SilverRoots
@@ -33,6 +34,14 @@ class FakeFetcher:
 
 def fixture(*parts: str) -> bytes:
     return FIXTURES.joinpath(*parts).read_bytes()
+
+
+def french_variant(archive: str, old: str, new: str) -> bytes:
+    """The archive's CSV fixture with `old` replaced by `new`, zipped again."""
+    source, member = FRENCH_ZIPS[archive]
+    text = (FIXTURES / "french" / source).read_text(encoding="latin-1")
+    assert old in text
+    return zip_csv(text.replace(old, new), member)
 
 
 def silver_roots(tmp_path: Path) -> SilverRoots:

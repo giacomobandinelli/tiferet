@@ -9,7 +9,13 @@ from pydantic import ValidationError
 
 from tiferet.config import CONFIG_DIR, read_yaml
 from tiferet.data.schema import SERIES_ID_PATTERN
-from tiferet.data.source_config import SOURCES_FILE, Sources, load_sources
+from tiferet.data.source_config import (
+    SOURCES_FILE,
+    Sources,
+    column_key,
+    load_sources,
+    title_key,
+)
 
 RAW = read_yaml(CONFIG_DIR / SOURCES_FILE)
 
@@ -119,3 +125,59 @@ def test_inconsistent_configuration_is_refused(
 ) -> None:
     with pytest.raises(ValidationError, match=message):
         Sources.model_validate(edited(path, value))
+
+
+@pytest.mark.parametrize(
+    ("header", "key"),
+    [
+        ("Dec 2", "dec2"),
+        ("2-Dec", "dec2"),
+        ("9-Dec", "dec9"),
+        (" dec   2 ", "dec2"),
+        ("Lo 10", "lo10"),
+        ("Hi 10", "hi10"),
+        ("<= 0", "le0"),
+        ("Qnt 2", "qnt2"),
+        ("Med 40", "med40"),
+        ("Mkt-RF", "mkt_rf"),
+        ("Agric", "agric"),
+    ],
+)
+def test_column_key_joins_a_word_and_its_number(header: str, key: str) -> None:
+    assert column_key(header) == key
+
+
+@pytest.mark.parametrize("header", ["", "Hi/10", "Hi (10)", "Lo 10%", "-Dec", "Dec 2-"])
+def test_column_key_refuses_unknown_headers(header: str) -> None:
+    assert column_key(header) is None
+
+
+@pytest.mark.parametrize(
+    ("title", "key"),
+    [
+        ("Average Value Weight Returns -- Monthly", "value weight returns -- monthly"),
+        ("Average Value Weighted Returns -- Daily", "value weight returns -- daily"),
+        ("  VALUE   Weighted returns -- Monthly ", "value weight returns -- monthly"),
+        ("Average Equal Weight Returns -- Monthly", "equal weight returns -- monthly"),
+    ],
+)
+def test_title_key_ignores_case_spaces_weighted_and_average(title: str, key: str) -> None:
+    assert title_key(title) == key
+
+
+def test_size_series_ids_use_one_word_per_decile() -> None:
+    files = [f for f in load_sources().french.files if f.dataset == "size"]
+    assert {f.frequency.value for f in files} == {"daily", "monthly"}
+    for file in files:
+        suffix = file.frequency.value[0]
+        assert file.series_ids() == tuple(
+            f"kf_size_{key}_{suffix}"
+            for key in ["lo10", *(f"dec{n}" for n in range(2, 10)), "hi10"]
+        )
+
+
+@pytest.mark.parametrize("columns", [["Mkt-RF", "Mkt RF"], ["Dec 2", "2-Dec"], ["Hi/10"]])
+def test_french_columns_must_have_distinct_known_headers(columns: list[str]) -> None:
+    raw = edited(("french", "files", 4, "columns"), columns)
+    with pytest.raises(ValidationError, match="known header form and distinct"):
+        Sources.model_validate(raw)

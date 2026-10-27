@@ -2,10 +2,11 @@
 
 Run from the repository root with `uv run python tests/fixtures/build_sources.py`. Every value
 is synthetic and every date is before 2023. The text fixtures (FRED and ECB JSON, the Kenneth
-French CSVs, the Shiller page) are written by hand; this script zips the CSVs as the library
-does, writes the 49-industry CSV, and writes `ie_data.xls` in the layout of Shiller's file.
-The helpers are also used by the tests to build variants with a renamed column or a missing
-section.
+French factor CSVs, the Shiller page) are written by hand; this script zips the CSVs as the
+library does, writes the portfolio CSVs (49 industries and size deciles, monthly and daily,
+with the library's title and column wording), and writes `ie_data.xls` in the layout of
+Shiller's file. The helpers are also used by the tests to build variants with a renamed
+column or a missing section.
 """
 
 import io
@@ -28,7 +29,33 @@ FRENCH_ZIPS = {
         "F-F_Research_Data_Factors_daily.CSV",
     ),
     "49_Industry_Portfolios_CSV.zip": ("ind49_monthly.csv", "49_Industry_Portfolios.CSV"),
+    "49_Industry_Portfolios_daily_CSV.zip": (
+        "ind49_daily.csv",
+        "49_Industry_Portfolios_daily.CSV",
+    ),
+    "Portfolios_Formed_on_ME_CSV.zip": ("size_monthly.csv", "Portfolios_Formed_on_ME.CSV"),
+    "Portfolios_Formed_on_ME_Daily_CSV.zip": (
+        "size_daily.csv",
+        "Portfolios_Formed_on_ME_Daily.CSV",
+    ),
+    "Asia_Pacific_ex_Japan_3_Factors_Daily_CSV.zip": (
+        "asia_pacific_daily.csv",
+        "Asia_Pacific_ex_Japan_3_Factors_Daily.csv",
+    ),
 }
+
+MONTHS = ["202206", "202207", "202208", "202209"]
+DAYS = ["20220929", "20220930", "20221003", "20221031"]
+SIZE_MONTHLY_COLUMNS = (
+    ["<= 0", "Lo 30", "Med 40", "Hi 30", "Lo 20", "Qnt 2", "Qnt 3", "Qnt 4", "Hi 20", "Lo 10"]
+    + [f"{n}-Dec" for n in range(2, 10)]
+    + ["Hi 10"]
+)
+SIZE_DAILY_COLUMNS = (
+    ["<= 0", "Lo 30", "Med 40", "Hi 30", "Lo 20", "Qnt 2", "Qnt 3", "Qnt 4", "Hi 20", "Lo 10"]
+    + [f"Dec {n}" for n in range(2, 10)]
+    + ["Hi 10"]
+)
 
 SHILLER_HEADER = (
     "Date",
@@ -74,21 +101,62 @@ def _section(title: str, columns: Sequence[str], dates: Sequence[str], seed: int
     return [*lines, ""]
 
 
-def ind49_csv(columns: Sequence[str]) -> str:
-    """A 49-industry file with monthly, annual and firm-count sections."""
-    months = ["202206", "202207", "202208", "202209"]
-    lines = [
+def portfolios_csv(
+    preamble: Sequence[str], columns: Sequence[str], sections: Sequence[tuple[str, Sequence[str]]]
+) -> str:
+    """A portfolio file: free-text notes, then one titled table per section."""
+    lines = [*preamble, ""]
+    for seed, (title, dates) in enumerate(sections, start=1):
+        lines += _section(title, columns, dates, seed)
+    return "\n".join([*lines, "Copyright 2022 Synthetic Fixture"]) + "\n"
+
+
+def ind49_csv(columns: Sequence[str], *, daily: bool = False) -> str:
+    """A 49-industry file with value- and equal-weighted returns and a firm-count section."""
+    if daily:
+        sections = [
+            ("Average Value Weighted Returns -- Daily", DAYS),
+            ("Average Equal Weighted Returns -- Daily", DAYS),
+            ("Number of Firms in Portfolios", DAYS),
+        ]
+    else:
+        sections = [
+            ("Average Value Weighted Returns -- Monthly", MONTHS),
+            ("Average Equal Weighted Returns -- Monthly", MONTHS),
+            ("Average Value Weighted Returns -- Annual", ["2020", "2021"]),
+            ("Number of Firms in Portfolios", MONTHS),
+        ]
+    preamble = [
         "This file was created using a synthetic test database.",
         "It contains value- and equal-weighted returns for 49 industry portfolios.",
         "Missing data are indicated by -99.99 or -999.",
-        "",
-        *_section("Average Value Weighted Returns -- Monthly", columns, months, 1),
-        *_section("Average Equal Weighted Returns -- Monthly", columns, months, 2),
-        *_section("Average Value Weighted Returns -- Annual", columns, ["2020", "2021"], 3),
-        *_section("Number of Firms in Portfolios", columns, months, 4),
-        "Copyright 2022 Synthetic Fixture",
     ]
-    return "\n".join(lines) + "\n"
+    return portfolios_csv(preamble, columns, sections)
+
+
+def size_csv(*, daily: bool = False) -> str:
+    """A size-decile file. The library words the titles and the deciles differently in the
+    monthly file ("Weight", "2-Dec") and the daily file ("Weighted", "Dec 2")."""
+    if daily:
+        columns = SIZE_DAILY_COLUMNS
+        sections = [
+            ("Average Value Weighted Returns -- Daily", DAYS),
+            ("Average Equal Weighted Returns -- Daily", DAYS),
+        ]
+    else:
+        columns = SIZE_MONTHLY_COLUMNS
+        sections = [
+            ("Average Value Weight Returns -- Monthly", MONTHS),
+            ("Average Equal Weight Returns -- Monthly", MONTHS),
+            ("Average Value Weight Returns -- Annual", ["2020", "2021"]),
+            ("Number of Firms in Portfolios", MONTHS),
+        ]
+    preamble = [
+        "This file was created using a synthetic test database.",
+        "It contains returns for portfolios formed on size.",
+        "Missing data are indicated by -99.99 or -999.",
+    ]
+    return portfolios_csv(preamble, columns, sections)
 
 
 def shiller_xls(
@@ -116,6 +184,11 @@ def shiller_xls(
 def main() -> None:
     ind49 = next(f for f in load_sources().french.files if f.dataset == "ind49")
     (FRENCH / "ind49_monthly.csv").write_text(ind49_csv(ind49.columns), encoding="latin-1")
+    (FRENCH / "ind49_daily.csv").write_text(
+        ind49_csv(ind49.columns, daily=True), encoding="latin-1"
+    )
+    (FRENCH / "size_monthly.csv").write_text(size_csv(), encoding="latin-1")
+    (FRENCH / "size_daily.csv").write_text(size_csv(daily=True), encoding="latin-1")
     for archive, (source, member) in FRENCH_ZIPS.items():
         text = (FRENCH / source).read_text(encoding="latin-1")
         (FRENCH / archive).write_bytes(zip_csv(text, member))
