@@ -1,6 +1,6 @@
 # 0010. Point-in-time semantics
 
-- Status: Accepted
+- Status: Accepted; storage model extended by 0013
 - Date: 2026-10-26
 
 ## Context

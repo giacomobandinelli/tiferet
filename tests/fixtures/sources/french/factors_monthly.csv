@@ -1,0 +1,15 @@
+This file was created using a synthetic test database.
+The 1-month TBill return is from a synthetic source.
+
+,Mkt-RF,SMB,HML,RF
+202207,    9.57,    2.81,   -4.10,    0.08
+202208,   -3.77,    1.39,    0.31,    0.19
+202209,   -9.35,   -0.79,    0.06,    0.19
+202210,    7.83,    0.09,    8.05,  -99.99
+202211,    4.60,   -3.40,    1.38,    0.29
+
+ Annual Factors: January-December 
+,Mkt-RF,SMB,HML,RF
+2021,   23.56,   -3.93,   25.53,    0.04
+
+Copyright 2022 Synthetic Fixture

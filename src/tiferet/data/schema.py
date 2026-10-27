@@ -2,7 +2,8 @@
 
 A silver table is long: one row per series, observation period and version. `obs_date` is
 the period a value refers to, as a naive date. `known_at` is the moment that version became
-known, as a UTC timestamp. A revision is a further row with a later `known_at`.
+known, as a UTC timestamp. A revision is a further row with a later `known_at`. The optional
+`vintage_kind` column says how `known_at` was set (decision 0013).
 """
 
 import pandas as pd
@@ -14,6 +15,12 @@ OBS_DATE = "obs_date"
 KNOWN_AT = "known_at"
 VALUE = "value"
 COLUMNS = (SERIES_ID, OBS_DATE, KNOWN_AT, VALUE)
+VINTAGE_KIND = "vintage_kind"
+ACTUAL = "actual"
+"""`known_at` is the publication time the source records for this version."""
+APPROXIMATED = "approximated"
+"""`known_at` follows a documented, conservative publication rule."""
+VINTAGE_KINDS = (ACTUAL, APPROXIMATED)
 
 OBS_DATE_DTYPE = "datetime64[us]"
 KNOWN_AT_DTYPE = pd.DatetimeTZDtype("us", "UTC")
@@ -36,6 +43,7 @@ def _schema(unique: list[str]) -> pa.DataFrameSchema:
             OBS_DATE: pa.Column(OBS_DATE_DTYPE, pa.Check(lambda s: (s == s.dt.normalize()).all())),
             KNOWN_AT: pa.Column(KNOWN_AT_DTYPE),
             VALUE: pa.Column(float),
+            VINTAGE_KIND: pa.Column(str, pa.Check.isin(VINTAGE_KINDS), required=False),
         },
         checks=[pa.Check(_known_after_period_start, error="known_at before obs_date")],
         unique=unique,

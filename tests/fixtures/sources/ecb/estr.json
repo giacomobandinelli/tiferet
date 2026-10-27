@@ -1,0 +1,46 @@
+{
+  "header": {
+    "id": "00000000-0000-0000-0000-000000000001",
+    "test": false,
+    "prepared": "2022-12-31T00:00:00.000+01:00",
+    "sender": {"id": "ECB"}
+  },
+  "dataSets": [
+    {
+      "action": "Replace",
+      "validFrom": "2022-12-31T00:00:00.000+01:00",
+      "series": {
+        "0:0:0": {
+          "observations": {
+            "0": [-0.584],
+            "1": [1.902],
+            "2": [1.898]
+          }
+        }
+      }
+    }
+  ],
+  "structure": {
+    "links": [],
+    "name": "Euro short-term rate",
+    "dimensions": {
+      "series": [
+        {"id": "FREQ", "name": "Frequency", "values": [{"id": "B", "name": "Daily - businessweek"}]},
+        {"id": "BENCHMARK_ITEM", "name": "Benchmark item", "values": [{"id": "EU000A2X2A25", "name": "Euro short-term rate"}]},
+        {"id": "DATA_TYPE_EST", "name": "Data type", "values": [{"id": "WT", "name": "Volume-weighted trimmed mean rate"}]}
+      ],
+      "observation": [
+        {
+          "id": "TIME_PERIOD",
+          "name": "Time period or range",
+          "role": "time",
+          "values": [
+            {"id": "2022-04-14", "name": "2022-04-14"},
+            {"id": "2022-12-29", "name": "2022-12-29"},
+            {"id": "2022-12-30", "name": "2022-12-30"}
+          ]
+        }
+      ]
+    }
+  }
+}

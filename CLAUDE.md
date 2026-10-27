@@ -14,6 +14,7 @@ These hold for every task. Hooks enforce some of them in every session that load
 4. **Every backtest goes through `run_backtest()`** in `src/tiferet/research/`, which appends the run to `research/ledger.parquet`. No backtest runs outside it, exploratory ones included. (§4, §8.1, 0005)
 5. **Every cost and tax number is sourced.** All fees, including TER, and every tax parameter live in `config/costs_taxes.yaml` with a source URL and the date checked. `config/holdings.yaml` holds instrument identity only. No cost or tax constant is written into code. (§3.8, §8.1, §10.6, 0004)
 6. **No language model produces or alters a published number.** The nightly pipeline is deterministic code. (§6)
+7. **No agent downloads live data.** Live data runs past 2022 and would expose the holdout. Adapters are tested on hand-built fixtures in `tests/fixtures/`, dated before 2023; a guard in `tests/conftest.py` refuses network access from the test process. Agents may read documentation and terms pages, but not pages that display current values, and never a data endpoint or data file. (0013)
 
 ### Definition of done
 
@@ -42,7 +43,7 @@ Where things live (§9). Details are read on demand, not copied here (§8.5). Fo
 | --- | --- |
 | `docs/plan.md` | The specification |
 | `docs/decisions/` | Decision records; read the relevant ones before revisiting a settled question |
-| `config/` | `holdings.yaml` (instrument identity: ISIN, tax class, launch date, `exposure_available_from`, sources) and `costs_taxes.yaml` (every fee and tax parameter, sourced and dated) |
+| `config/` | `holdings.yaml` (instrument identity: ISIN, tax class, launch date, `exposure_available_from`, sources), `costs_taxes.yaml` (every fee and tax parameter, sourced and dated) and `sources.yaml` (data-source series, publication lags and times, sourced and dated) |
 | `research/` | `preregistration.yaml` (protected), `ledger.parquet` (every backtest), `referee/` (one report per published result) |
 | `src/tiferet/data/` | One adapter per source; point-in-time accessor in `pit.py` |
 | `src/tiferet/features/` | Feature library (SQL in DuckDB and Python) |
@@ -158,3 +159,12 @@ python3 scripts/check_protected.py  # tagged files unchanged; needs the tags fet
 ```
 
 CI (`.github/workflows/ci.yml`) runs the first five on Ubuntu and Windows for every push and pull request, plus `check_protected.py` in a separate job. (§8.2, 0012)
+
+Smoke commands, run by the owner only, never by an agent (0013). Each downloads every configured item and prints row counts per partition, no values; FRED needs `FRED_API_KEY` in the environment (`uv run --env-file .env ...`):
+
+```sh
+uv run python -m tiferet.data.fred --smoke
+uv run python -m tiferet.data.ecb --smoke
+uv run python -m tiferet.data.french --smoke
+uv run python -m tiferet.data.shiller --smoke
+```
