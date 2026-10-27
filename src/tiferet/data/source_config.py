@@ -14,7 +14,7 @@ from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from tiferet.config import CONFIG_DIR, Parameter, read_yaml
+from tiferet.config import CONFIG_DIR, Parameter, Sourced, read_yaml
 from tiferet.data.schema import SERIES_ID_PATTERN
 from tiferet.data.timing import Frequency
 
@@ -59,7 +59,18 @@ class FredSeries(_Model):
 class Fred(_Model):
     api_url: HttpsUrl
     api_key_env: str = Field(pattern=r"^[A-Z][A-Z0-9_]*$")
+    no_vintage_errors: Sourced[tuple[str, ...]]
+    """Phrases of FRED's error text, matched ignoring case, when a series has no usable
+    vintage history."""
     series: tuple[FredSeries, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _phrases(self) -> Self:
+        if not all(p.strip() for p in self.no_vintage_errors.value) or not (
+            self.no_vintage_errors.value
+        ):
+            raise ValueError("no_vintage_errors needs at least one phrase")
+        return self
 
     def by_id(self, series_id: str) -> FredSeries:
         return next(s for s in self.series if s.series_id == series_id)

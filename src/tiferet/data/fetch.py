@@ -2,22 +2,25 @@
 
 `HttpFetcher` adds a timeout, bounded retries with exponential backoff, a minimum interval
 between requests to one host and an identifying User-Agent. A body cut short, by a dropped
-connection or against its Content-Length, is retried like any transient failure. API keys
-are read from the environment by name and never appear in a logged URL, an error message or
-the manifest: `Download.url` is always redacted.
+connection or against its Content-Length, is retried like any transient failure. A failed
+download's error names the server's own error text (truncated), the reason of a connection
+failure, the redirect chain and the final status. API keys are read from the environment by
+name and never appear in a logged URL, an error message or the manifest: `Download.url` and
+every error text are redacted.
 """
 
 import http.client
+import json
 import os
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from email.message import Message
 from importlib.metadata import version
 from types import TracebackType
-from typing import Protocol
+from typing import IO, Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pandas as pd
@@ -27,12 +30,26 @@ SECRET_PARAMS = frozenset({"api_key"})
 REDACTED = "REDACTED"
 RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 MAX_BYTES = 256 * 1024 * 1024
+ACCEPT = "*/*"
+"""Sent with every request; some CDNs refuse requests without an Accept header."""
+MAX_ERROR_TEXT = 300
+"""Characters of a server's error text kept in a `FetchError`."""
+MAX_ERROR_BODY = 64 * 1024
 MAX_RETRY_AFTER = 120.0
 """Longest server-requested wait honoured, in seconds; a longer one fails the download."""
 
 
 class FetchError(RuntimeError):
-    """A download failed after its retries. The message holds only the redacted URL."""
+    """A download failed after its retries. The message holds only redacted text.
+
+    `status` is the final HTTP status, if any; `detail` is the server's error text or the
+    reason of a connection failure, redacted and truncated.
+    """
+
+    def __init__(self, message: str, *, status: int | None = None, detail: str | None = None):
+        super().__init__(message)
+        self.status = status
+        self.detail = detail
 
 
 class _TruncatedError(Exception):
@@ -100,6 +117,55 @@ def api_key(name: str, env: Mapping[str, str] | None = None) -> str:
     return value
 
 
+def redact_text(text: str, secrets: Iterable[str]) -> str:
+    """`text` with every secret value replaced, collapsed to one line and truncated."""
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, REDACTED)
+    line = " ".join(text.split())
+    return line if len(line) <= MAX_ERROR_TEXT else line[: MAX_ERROR_TEXT - 3] + "..."
+
+
+def server_text(error: urllib.error.HTTPError) -> str:
+    """The error text of an HTTP error body: `error_message` of a JSON body, else the body."""
+    try:
+        body = error.read(MAX_ERROR_BODY) if error.fp is not None else b""
+    except (OSError, http.client.HTTPException):
+        body = b""
+    text = body.decode("utf-8", errors="replace")
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return text
+    if isinstance(parsed, dict) and isinstance(parsed.get("error_message"), str):
+        return str(parsed["error_message"])
+    return text
+
+
+class RedirectLog(urllib.request.HTTPRedirectHandler):
+    """Follows redirects like urllib and records each one as (status, target URL)."""
+
+    def __init__(self) -> None:
+        self.chain: list[tuple[int, str]] = []
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: http.client.HTTPMessage,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        self.chain.append((code, newurl))
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    def describe(self) -> str:
+        if not self.chain:
+            return "no redirects"
+        return "redirects " + " -> ".join(f"{code} {redact(url)}" for code, url in self.chain)
+
+
 def _retry_after(headers: Message | None) -> float | None:
     raw = headers.get("Retry-After") if headers is not None else None
     try:
@@ -120,6 +186,7 @@ class HttpFetcher:
         min_interval: float = 1.0,
         max_bytes: int = MAX_BYTES,
         opener: Opener | None = None,
+        redirect_log: RedirectLog | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -127,33 +194,55 @@ class HttpFetcher:
             raise ValueError("attempts must be at least 1")
         self._timeout, self._attempts, self._backoff = timeout, attempts, backoff
         self._min_interval, self._max_bytes = min_interval, max_bytes
-        self._opener: Opener = opener if opener is not None else urllib.request.build_opener()
+        if opener is None:
+            self._redirects: RedirectLog | None = redirect_log or RedirectLog()
+            self._opener: Opener = urllib.request.build_opener(self._redirects)
+        else:
+            self._redirects, self._opener = redirect_log, opener
         self._clock, self._sleep = clock, sleep
         self._last_request: dict[str, float] = {}
 
     def get(self, url: str, params: Mapping[str, str] | None = None) -> Download:
         full = build_url(url, params)
         shown = redact(full)
+        secrets = [v for k, v in parse_qsl(urlsplit(full).query) if k in SECRET_PARAMS]
         for attempt in range(1, self._attempts + 1):
             self._wait_for_host(urlsplit(full).netloc)
+            if self._redirects is not None:
+                self._redirects.chain.clear()
             try:
                 content = self._read(full)
             except urllib.error.HTTPError as error:
-                if error.code not in RETRY_STATUS or attempt == self._attempts:
-                    raise FetchError(f"HTTP {error.code} from {shown}") from None
                 delay = _retry_after(error.headers)
-                if delay is not None and delay > MAX_RETRY_AFTER:
+                last = error.code not in RETRY_STATUS or attempt == self._attempts
+                if last or (delay is not None and delay > MAX_RETRY_AFTER):
+                    detail = redact_text(server_text(error), secrets)
+                    wait = f"; the server asks to wait {delay:.0f} s" if not last else ""
                     raise FetchError(
-                        f"HTTP {error.code} from {shown}; the server asks to wait {delay:.0f} s"
+                        f"HTTP {error.code} from {shown}{wait}: {detail or 'no error text'}"
+                        f" ({self._describe_redirects()}; final status {error.code})",
+                        status=error.code,
+                        detail=detail,
                     ) from None
             except (OSError, http.client.HTTPException, _TruncatedError) as error:
                 if attempt == self._attempts:
-                    raise FetchError(f"{type(error).__name__} from {shown}") from None
+                    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+                    detail = redact_text(str(reason), secrets)
+                    raise FetchError(
+                        f"{type(error).__name__} from {shown}: {detail or 'no reason given'}"
+                        f" ({self._describe_redirects()}; no final status)",
+                        detail=detail,
+                    ) from None
                 delay = None
             else:
                 return Download(shown, content, pd.Timestamp.now(tz="UTC"))
             self._sleep(delay if delay is not None else self._backoff ** (attempt - 1))
         raise AssertionError("unreachable")  # pragma: no cover
+
+    def _describe_redirects(self) -> str:
+        if self._redirects is None:
+            return "redirects not recorded"
+        return self._redirects.describe()
 
     def _wait_for_host(self, host: str) -> None:
         last = self._last_request.get(host)
@@ -164,7 +253,7 @@ class HttpFetcher:
         self._last_request[host] = self._clock()
 
     def _read(self, url: str) -> bytes:
-        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": ACCEPT})
         with self._opener.open(request, timeout=self._timeout) as response:
             content = response.read(self._max_bytes + 1)
             declared = response.headers.get("Content-Length")

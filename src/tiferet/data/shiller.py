@@ -20,14 +20,16 @@ from urllib.parse import urljoin, urlsplit
 import pandas as pd
 
 from tiferet.data.adapter import Batch, combine, stamped
+from tiferet.data.cli import Inspection
 from tiferet.data.cli import main as run_cli
 from tiferet.data.errors import SourceFormatError
-from tiferet.data.fetch import Fetcher
+from tiferet.data.fetch import Fetcher, FetchError
 from tiferet.data.schema import APPROXIMATED
 from tiferet.data.source_config import Fred, Shiller, ShillerRule, ShillerSeries, Sources
 from tiferet.data.timing import Frequency, known_after_lag
 
 SOURCE = "shiller"
+INSPECT_ROWS = 60
 
 
 class _Links(HTMLParser):
@@ -59,11 +61,16 @@ def find_link(page: bytes, config: Shiller) -> str:
     return link
 
 
-def _sheet(content: bytes, config: Shiller) -> pd.DataFrame:
+def _workbook(content: bytes) -> dict[str, pd.DataFrame]:
     try:
         sheets = pd.read_excel(io.BytesIO(content), sheet_name=None, header=None, engine="calamine")
     except Exception:
         raise SourceFormatError(SOURCE, "the data file is not a readable spreadsheet") from None
+    return {str(name): sheet for name, sheet in sheets.items()}
+
+
+def _sheet(content: bytes, config: Shiller) -> pd.DataFrame:
+    sheets = _workbook(content)
     if config.sheet not in sheets:
         raise SourceFormatError(SOURCE, f"the data file has no sheet {config.sheet!r}")
     return sheets[config.sheet]
@@ -155,6 +162,50 @@ def stamp(wide: pd.DataFrame, config: Shiller, fred: Fred) -> list[pd.DataFrame]
     return frames
 
 
+def _is_number(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int | float):
+        return True
+    try:
+        float(str(value))
+    except ValueError:
+        return False
+    return True
+
+
+def _header_lines(sheet: pd.DataFrame) -> list[str]:
+    """The text cells of each row above the first row of numbers; never a number."""
+    lines = []
+    for position in range(min(len(sheet), INSPECT_ROWS)):
+        row = sheet.iloc[position]
+        first = row.iloc[0]
+        if _is_number(first) and not (isinstance(first, float) and math.isnan(first)):
+            break
+        texts = [_cell(v) for v in row]
+        texts = [t for t in texts if t and not _is_number(t)]
+        if texts:
+            lines.append(f"row {position}: " + " | ".join(texts))
+    return lines
+
+
+def inspect(fetcher: Fetcher, sources: Sources) -> Inspection:
+    """The data link, the sheet names and the header cells of the data sheet."""
+    config = sources.shiller
+    lines: list[str] = []
+    try:
+        link = find_link(fetcher.get(config.page_url).content, config)
+        lines.append(f"link: {link}")
+        sheets = _workbook(fetcher.get(link).content)
+    except (FetchError, SourceFormatError) as error:
+        return Inspection([*lines, f"shiller: {error}"], 1)
+    lines.append("sheets: " + ", ".join(sheets))
+    if config.sheet not in sheets:
+        return Inspection([*lines, f"no sheet {config.sheet!r}"], 1)
+    header = _header_lines(sheets[config.sheet])
+    return Inspection([*lines, f"{config.sheet} header rows:", *header])
+
+
 def collect(fetcher: Fetcher, sources: Sources, *, smoke: bool) -> Batch:
     config = sources.shiller
     page = fetcher.get(config.page_url)
@@ -165,4 +216,4 @@ def collect(fetcher: Fetcher, sources: Sources, *, smoke: bool) -> Batch:
 
 
 if __name__ == "__main__":
-    raise SystemExit(run_cli(SOURCE, collect))
+    raise SystemExit(run_cli(SOURCE, collect, inspect=inspect))

@@ -104,6 +104,8 @@ def edited(path: tuple[str | int, ...], value: Any) -> dict[str, Any]:
         (("french", "files", 0, "columns"), ["SMB"], "market_return needs"),
         (("french", "files", 0, "frequency"), "quarterly", "daily or monthly"),
         (("silver", "max_row_loss_fraction", "value"), 1, r"\[0, 1\)"),
+        (("fred", "no_vintage_errors", "value"), [], "at least one phrase"),
+        (("fred", "no_vintage_errors", "value"), [" "], "at least one phrase"),
         (("ecb", "datasets", 0, "series", 0, "series_id"), "ECB-YC", "String should match"),
         (
             ("fred", "series", 0, "publication_lag_days", "source_url"),

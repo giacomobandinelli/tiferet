@@ -2,6 +2,7 @@
 
 import http.client
 import io
+import json
 import socket
 import ssl
 import urllib.error
@@ -14,10 +15,12 @@ from typing import Any
 import pytest
 
 from tiferet.data.fetch import (
+    ACCEPT,
     USER_AGENT,
     FetchError,
     HttpFetcher,
     MissingKeyError,
+    RedirectLog,
     api_key,
     build_url,
     redact,
@@ -200,3 +203,82 @@ def test_long_retry_after_fails_instead_of_waiting() -> None:
 def test_the_test_process_has_no_network(call: Callable[[], object]) -> None:
     with pytest.raises(OSError, match="tests do not use the network"):
         call()
+
+
+def http_error_with_body(code: int, body: bytes) -> urllib.error.HTTPError:
+    return urllib.error.HTTPError(
+        f"{URL}?api_key={KEY}", code, "error", Message(), io.BytesIO(body)
+    )
+
+
+def test_error_names_fred_error_message_with_the_key_redacted() -> None:
+    body = json.dumps(
+        {"error_code": 400, "error_message": f"Bad Request.  Key {KEY} has no ALFRED vintages."}
+    ).encode()
+    opener, clock = FakeOpener(http_error_with_body(400, body)), Clock()
+    with pytest.raises(FetchError) as raised:
+        fetcher(opener, clock).get(URL, {"api_key": KEY})
+    error = raised.value
+    assert error.status == 400
+    assert error.detail == "Bad Request. Key REDACTED has no ALFRED vintages."
+    assert "HTTP 400" in str(error) and "has no ALFRED vintages" in str(error)
+    assert "redirects not recorded; final status 400" in str(error)
+    assert KEY not in str(error)
+
+
+def test_plain_error_text_is_truncated_to_300_characters() -> None:
+    opener, clock = FakeOpener(http_error_with_body(404, b"x" * 1000)), Clock()
+    with pytest.raises(FetchError) as raised:
+        fetcher(opener, clock).get(URL)
+    assert raised.value.detail is not None and len(raised.value.detail) == 300
+
+
+def test_connection_failure_names_its_reason() -> None:
+    reason = urllib.error.URLError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed")
+    opener, clock = FakeOpener(reason), Clock()
+    with pytest.raises(FetchError, match=r"URLError from .*CERTIFICATE_VERIFY_FAILED") as raised:
+        fetcher(opener, clock, attempts=1).get(URL)
+    assert "no final status" in str(raised.value)
+
+
+def test_redirect_chain_and_final_status_are_reported() -> None:
+    log = RedirectLog()
+
+    class RedirectingOpener(FakeOpener):
+        def open(self, request: urllib.request.Request, *, timeout: float) -> FakeResponse:
+            log.chain.append((302, f"https://cdn.example.org/file.xls?api_key={KEY}"))
+            return super().open(request, timeout=timeout)
+
+    opener, clock = RedirectingOpener(http_error_with_body(403, b"Forbidden")), Clock()
+    client = HttpFetcher(opener=opener, redirect_log=log, clock=clock, sleep=clock.sleep)
+    with pytest.raises(FetchError) as raised:
+        client.get(URL, {"api_key": KEY})
+    message = str(raised.value)
+    assert "redirects 302 https://cdn.example.org/file.xls?api_key=REDACTED" in message
+    assert "final status 403" in message and "Forbidden" in message
+    assert KEY not in message
+    assert opener.requests[0].get_header("Accept") == ACCEPT
+
+
+def test_redirect_log_records_each_hop() -> None:
+    log = RedirectLog()
+    request = urllib.request.Request("https://a.example.org/x")
+    follow = log.redirect_request(
+        request, io.BytesIO(b""), 301, "moved", http.client.HTTPMessage(), "https://b.example.org/y"
+    )
+    assert follow is not None and follow.full_url == "https://b.example.org/y"
+    assert log.chain == [(301, "https://b.example.org/y")]
+
+
+def test_redirects_through_a_supplied_opener_are_not_claimed_absent() -> None:
+    opener, clock = FakeOpener(http_error_with_body(403, b"Forbidden")), Clock()
+    with pytest.raises(FetchError, match="redirects not recorded; final status 403"):
+        fetcher(opener, clock).get(URL)
+
+
+def test_key_in_the_url_is_redacted_from_the_server_text() -> None:
+    body = json.dumps({"error_message": f"Key {KEY} rejected"}).encode()
+    opener, clock = FakeOpener(http_error_with_body(400, body)), Clock()
+    with pytest.raises(FetchError) as raised:
+        fetcher(opener, clock).get(f"{URL}?api_key={KEY}")
+    assert KEY not in str(raised.value) and raised.value.detail == "Key REDACTED rejected"
