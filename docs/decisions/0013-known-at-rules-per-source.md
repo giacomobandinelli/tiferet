@@ -28,8 +28,15 @@ Raw files must be ingested without exposing the holdout, and agents must not dow
 
 - Each series is requested over the full real-time range, so every vintage arrives as one row per value and real-time period.
 - A version is known at 23:59:59 America/New_York on its `realtime_start`.
-- ALFRED's first vintage of a series often carries decades of earlier observations. For a row of that first vintage, `known_at` is the end of the observation period plus the series' publication lag, at 23:59:59 New York time, when that is earlier than the first vintage. Such rows are `approximated`; all others are `actual`.
+- ALFRED's first vintage of a series often carries decades of earlier observations. For a row of that first vintage, `known_at` is the end of the observation period plus the series' publication lag, at 23:59:59 New York time, when that is earlier than the first vintage. Such rows are `approximated`; all others are `actual`. This applies only when the first vintage was taken by the development end (2022-12-31). A later first vintage carries post-2022 knowledge, so its rows keep their own date and fall in the holdout.
 - An approximated row carries the value of the first vintage, which may include revisions made before it. This is the remaining look-ahead risk of the rule, limited to the years before ALFRED tracked the series.
+- Some series cannot be requested with their vintages. FRED answers 400 when a series has no ALFRED history, or when it has more vintage dates than one request allows. The case is recognised only from FRED's own error text, which must contain a phrase from `fred.no_vintage_errors`; any other error stays an error. The series is then built from real-time snapshots, each requested with `realtime_start` and `realtime_end` set to one date:
+  - The development-end snapshot (2022-12-31) stamps every row at the end of its period plus the publication lag.
+  - At ingestion, a snapshot taken today adds only the values that are new or changed since the development-end snapshot. Each is known no earlier than 23:59:59 New York time on the day of that snapshot.
+  - When FRED refuses the development-end snapshot too, today's snapshot is the only source, also in a smoke run, whose observations still stop at the development end. Its rows are then all known from today.
+
+  Every snapshot row is `approximated`. A value of the development-end snapshot carries revisions made before 2023, taken as known from the lag. No value seen only after 2022 is dated before the day it was seen, so post-2022 revisions never reach the development partition. A full refresh replaces today's snapshot each run, so the dates of values first seen on earlier days are kept only once the nightly pipeline merges downloads incrementally.
+- For series over the vintage-date limit, splitting the request into real-time windows under the limit would keep their actual vintages. That is left as a later improvement to the snapshot rule.
 - Missing values (`.`) are dropped. A vintage that withdraws a value, marking an observation `.` after a numeric version, cannot be stored, because silver values are never null. The earlier version then stays the latest one in the point-in-time view after the withdrawal. This shows a stale value, never a later one.
 
 **Shiller.**
@@ -88,6 +95,14 @@ Raw files must be ingested without exposing the holdout, and agents must not dow
 
 - It downloads every configured item, parses and stamps it, and prints row counts per partition. It prints no values and writes nothing.
 - FRED and ECB smoke requests stop at 2022-12-31.
+- `--inspect` downloads each configured item and prints its structure only, never a value or an observation date:
+  - French: each table's title line, column header line, row count and date widths;
+  - Shiller: the data link, the sheet names and the text cells above the first data row;
+  - ECB: the SDMX dimension ids and series codes;
+  - FRED: whether a vintage request up to the development end, and one over the full real-time range, succeed, with FRED's error text if not; observations stop at the development end in both.
+
+  It exits with status 1 when an item could not be inspected. Configuration such as French section titles is corrected from its output.
+- A failed download's error gives the server's error text (FRED's `error_message`, truncated to 300 characters), the reason of a connection failure, the redirect chain and the final status, all with keys redacted.
 - Ingestion (`--ingest`) runs in production mode, by the owner only.
 
 ## Consequences

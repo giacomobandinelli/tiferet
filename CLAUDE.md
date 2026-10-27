@@ -160,7 +160,7 @@ python3 scripts/check_protected.py  # tagged files unchanged; needs the tags fet
 
 CI (`.github/workflows/ci.yml`) runs the first five on Ubuntu and Windows for every push and pull request, plus `check_protected.py` in a separate job. (§8.2, 0012)
 
-Smoke commands, run by the owner only, never by an agent (0013). Each downloads every configured item and prints row counts per partition, no values; FRED needs `FRED_API_KEY` in the environment (`uv run --env-file .env ...`):
+Smoke commands, run by the owner only, never by an agent (0013). Each downloads every configured item and prints row counts per partition, no values; `--inspect` in place of `--smoke` prints each item's structure (titles, headers, dimension ids, request outcomes), never a value; FRED needs `FRED_API_KEY` in the environment (`uv run --env-file .env ...`):
 
 ```sh
 uv run python -m tiferet.data.fred --smoke

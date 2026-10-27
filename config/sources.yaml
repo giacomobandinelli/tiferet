@@ -28,6 +28,17 @@ silver:
 fred:
   api_url: https://api.stlouisfed.org/fred/series/observations
   api_key_env: FRED_API_KEY
+  no_vintage_errors:
+    value:
+      - does not exist in ALFRED
+      - maximum number of vintage dates
+    source_url: https://fred.stlouisfed.org/docs/api/fred/errors.html
+    checked_on: 2026-10-27
+    verified: false
+    reason: >-
+      FRED documents the error_message field but not the wording of these two errors. Each
+      phrase is matched, ignoring case, against FRED's own error text; a 400 whose text holds
+      neither phrase stays an error.
   series:
     - series_id: fred_cpiaucsl
       fred_id: CPIAUCSL

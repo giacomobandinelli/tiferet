@@ -18,6 +18,8 @@ Plan §5.1 named Stooq for daily equity and ETF prices and listed the other free
 | Kenneth French Data Library | US, regional and industry factor and portfolio returns since 1926 | Freely downloadable. The library recomputes its full history every month, so it is a history source, not a live one. Results cite the library. |
 | Robert Shiller, shillerdata.com | S&P composite price, dividends, earnings, CPI and long rate since 1871 | Published without a licence and with a disclaimer that the user assumes all risk. The file is revised in place. Results cite the source; raw values are not republished. |
 
+**Request identity.** Every request carries the honest project User-Agent, `tiferet/<version> (+https://github.com/giacomobandinelli/tiferet)`, and `Accept: */*`, because urllib sends no Accept header and some CDNs refuse requests without one. The first smoke run failed to download Shiller's `ie_data.xls` from its CDN (img1.wsimg.com) with a connection error whose reason was not reported. It is not yet established whether the CDN rejects the project User-Agent. Errors now report the reason, the redirect chain and the final status. If the CDN is shown to reject the User-Agent, whether to change it is the owner's decision; until then it stays.
+
 **Sources dropped or not used.**
 
 - **Stooq** is dropped. Its downloads require an API key since March 2026, and its terms forbid redistribution without consent.

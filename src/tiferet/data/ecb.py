@@ -15,9 +15,10 @@ from typing import Any
 import pandas as pd
 
 from tiferet.data.adapter import Batch, combine, stamped
+from tiferet.data.cli import Inspection
 from tiferet.data.cli import main as run_cli
 from tiferet.data.errors import SourceFormatError
-from tiferet.data.fetch import Download, Fetcher
+from tiferet.data.fetch import Download, Fetcher, FetchError
 from tiferet.data.pit import DEVELOPMENT_END
 from tiferet.data.schema import APPROXIMATED
 from tiferet.data.source_config import EcbDataset, EcbSeries, Sources
@@ -115,6 +116,39 @@ def stamp(raw: pd.DataFrame, dataset: EcbDataset, series: EcbSeries) -> pd.DataF
     return stamped(series.series_id, raw["obs_date"], known_at, raw["value"], APPROXIMATED)
 
 
+def describe(content: bytes, item: str) -> str:
+    """The series dimension ids with their codes and the observation dimension ids."""
+    try:
+        message = json.loads(content)
+    except (ValueError, UnicodeDecodeError):
+        raise SourceFormatError(SOURCE, f"{item}: response is not JSON") from None
+    dimensions = _get(message, ("structure", "dimensions"), item)
+    try:
+        series = [
+            f"{d['id']}={'/'.join(str(v['id']) for v in d['values'])}"
+            for d in _get(dimensions, ("series",), item)
+        ]
+        observation = [str(d["id"]) for d in _get(dimensions, ("observation",), item)]
+    except (KeyError, TypeError):
+        raise SourceFormatError(SOURCE, f"{item}: dimensions are malformed") from None
+    return f"{item}: series {', '.join(series)}; observation {', '.join(observation)}"
+
+
+def inspect(fetcher: Fetcher, sources: Sources) -> Inspection:
+    """The SDMX dimension ids of each configured series, requested up to the development end."""
+    lines, failures = [], 0
+    for dataset in sources.ecb.datasets:
+        for series in dataset.series:
+            item = f"{dataset.flow}.{series.key}"
+            url = f"{sources.ecb.api_url}/{dataset.flow}/{series.key}"
+            try:
+                lines.append(describe(fetcher.get(url, _params(smoke=True)).content, item))
+            except (FetchError, SourceFormatError) as error:
+                lines.append(f"{item}: {error}")
+                failures += 1
+    return Inspection(lines, failures)
+
+
 def collect(fetcher: Fetcher, sources: Sources, *, smoke: bool) -> Batch:
     downloads: list[Download] = []
     frames = []
@@ -130,4 +164,4 @@ def collect(fetcher: Fetcher, sources: Sources, *, smoke: bool) -> Batch:
 
 
 if __name__ == "__main__":
-    raise SystemExit(run_cli(SOURCE, collect))
+    raise SystemExit(run_cli(SOURCE, collect, inspect=inspect))

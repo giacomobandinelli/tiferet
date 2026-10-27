@@ -20,9 +20,10 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from tiferet.data.adapter import Batch, combine, stamped
+from tiferet.data.cli import Inspection
 from tiferet.data.cli import main as run_cli
 from tiferet.data.errors import SourceFormatError
-from tiferet.data.fetch import Download, Fetcher
+from tiferet.data.fetch import Download, Fetcher, FetchError
 from tiferet.data.schema import APPROXIMATED
 from tiferet.data.source_config import FrenchFile, Sources
 from tiferet.data.timing import Frequency, known_after_lag
@@ -153,6 +154,34 @@ def stamp(wide: pd.DataFrame, file: FrenchFile, lag: int) -> list[pd.DataFrame]:
     return frames
 
 
+def describe(found: list[Table]) -> list[str]:
+    """Each table's title, column header and row count; never a value or a date."""
+    lines = []
+    for table in found:
+        widths = sorted({len(d) for d in table.dates})
+        lines += [
+            f"  title: {table.title}",
+            f"  header: {', '.join(table.columns)}",
+            f"  rows: {len(table.dates)}, date widths {widths}",
+        ]
+    return lines
+
+
+def inspect(fetcher: Fetcher, sources: Sources) -> Inspection:
+    """Every section title line and column header line of every configured file."""
+    lines, failures = [], 0
+    for file in sources.french.files:
+        try:
+            text = read_csv(fetcher.get(sources.french.base_url + file.file).content, file.file)
+        except (FetchError, SourceFormatError) as error:
+            lines.append(f"{file.file}: {error}")
+            failures += 1
+            continue
+        found = tables(text)
+        lines += [f"{file.file}: {len(found)} tables", *describe(found)]
+    return Inspection(lines, failures)
+
+
 def collect(fetcher: Fetcher, sources: Sources, *, smoke: bool) -> Batch:
     config = sources.french
     downloads: list[Download] = []
@@ -166,4 +195,4 @@ def collect(fetcher: Fetcher, sources: Sources, *, smoke: bool) -> Batch:
 
 
 if __name__ == "__main__":
-    raise SystemExit(run_cli(SOURCE, collect))
+    raise SystemExit(run_cli(SOURCE, collect, inspect=inspect))
