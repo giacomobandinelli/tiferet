@@ -271,20 +271,24 @@ When many strategies are tested on the same history, some look good by chance: t
 
 ### 5.1 Sources
 
-All sources are free. Licences and download limits are checked when each adapter is built; raw data is never republished, only derived results.
+All sources are free. Licences and download limits are checked when each adapter is built; raw data is never republished, only derived results. Source choices and their terms are recorded in decision 0014, and the `known_at` rule of each source in decision 0013.
 
 | Domain | Sources | Used for |
 | --- | --- | --- |
-| Equities and ETFs (Europe, US) | Stooq bulk daily prices; issuer pages for UCITS data | Holding returns, proxies, sector and divergence signals |
+| Equities and ETFs (Europe, US) | Issuer NAV files for UCITS and US-listed ETFs; Kenneth French data library for factor, industry and size portfolio returns | Holding returns, proxies, sector and divergence signals |
 | ETF quotes and fees | Exchange data, issuer factsheets, quote snapshots | Spread validation, TERs |
 | ETF holdings | Daily holdings files from iShares, Xtrackers, Amundi, SPDR | Look-through risk |
 | Fundamentals | SEC EDGAR XBRL company facts | Valuation signals such as earnings yield against bond yields |
-| Macro and rates | FRED and ALFRED (vintages), ECB Data Portal, Eurostat, OECD, BIS | Cycle-phase model, rate and stress signals |
+| Macro and rates | FRED and ALFRED (vintages), ECB Data Portal (yield curves, €STR, reference rates), Eurostat, OECD, BIS | Cycle-phase model, rate and stress signals |
 | Long histories | Shiller data (S&P 500 since 1871), Kenneth French data library (since 1926) | Benchmark history, dynamic ladder |
-| Commodities | World Bank Pink Sheet, FRED, ETC prices | Commodity holdings and signals |
-| Crypto | CoinGecko and CoinMetrics community data: daily price, volume, market capitalization; stablecoin market caps | Crypto holdings, BTC dominance ex-stablecoins, crypto signals |
+| Commodities | World Bank Pink Sheet, FRED (WTI), ETC issuer NAV files | Commodity holdings and signals |
+| Crypto | CoinGecko and Coin Metrics community data: daily price, volume, market capitalization; stablecoin market caps | Crypto holdings, BTC dominance ex-stablecoins, crypto signals |
 | Volatility | Cboe VIX history | Stress signals |
 | Instrument master | OpenFIGI, ISIN and ticker lists | Linking each UCITS ETF to its index, proxy and tax class |
+
+Stooq is not used: its downloads require an API key since March 2026 and its terms forbid redistribution without consent. Yahoo Finance is not used: its terms allow personal use only (decision 0014).
+
+**Open gaps.** No free source has been chosen yet for daily gold, silver and copper prices, daily emerging-market equity prices, or the daily BTP-Bund spread.
 
 **BTC dominance ex-stablecoins** needs complete histories of total crypto market capitalization and of stablecoin market capitalization. Sources, in order of preference:
 
@@ -363,6 +367,8 @@ At most one accent colour, used only to carry meaning (for example the regime st
 2. **Design skills.** Building uses established open-source design skills for Claude Code: Anthropic's `frontend-design` skill and `taste-skill` during construction, and `impeccable` for refinement passes (`polish`, `distill`, `bolder`). Each skill is installed from its repository and pinned to a version.
 3. **Motion.** Animations follow interface-motion principles in the style of Emil Kowalski's work (short durations, natural easing, purposeful transitions, respect for reduced-motion settings).
 4. **Verification.** The `preship-qa` workflow opens every page in a browser at 390 px and 1440 px, checks loading, empty, error and data states, and records before-and-after screenshots.
+
+**Attribution.** Every page and export that uses FRED data carries the sentence "This product uses the FRED® API but is not endorsed or certified by the Federal Reserve Bank of St. Louis." Results built on ECB statistics cite "Source: ECB statistics" and state the calculations derived from them; results built on the Kenneth French data library and Shiller's data cite them (decision 0014).
 
 **Footer.** A compact integrity strip at the end of every page: rows in the warehouse, data tests passing in the latest run, live record against the benchmark, trials in the ledger, and a link to the latest referee report.
 
@@ -467,6 +473,7 @@ tiferet/
   config/
     holdings.yaml          # instrument identity: ISIN, tax class, launch date, exposure date, sources
     costs_taxes.yaml       # every fee (TER included) and tax parameter, with source and date checked
+    sources.yaml           # data-source series lists, publication lags and times, with source and date checked
   research/
     preregistration.yaml   # hook-protected
     ledger.parquet         # every backtest

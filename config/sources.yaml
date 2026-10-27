@@ -1,0 +1,398 @@
+# Data sources of the research-history layer (decisions 0013 and 0014).
+#
+# Series lists, keys, file names and URLs are identity configuration and may be extended
+# freely. Every lag, publication time and tolerance is a sourced value, with the same fields
+# as in config/costs_taxes.yaml:
+#   value        the parameter
+#   unit         unit of value
+#   source_url   where it was checked
+#   checked_on   date of the check
+#   verified     true if the value was read on a primary source on checked_on
+#   reason       required when verified is false
+#   note         optional context
+#
+# Lags are conservative: a value is never taken to be known before its source published it.
+# The rules that use them are stated in decision 0013.
+
+silver:
+  max_row_loss_fraction:
+    value: 0.001
+    unit: fraction
+    source_url: https://github.com/giacomobandinelli/tiferet/blob/main/docs/decisions/0013-known-at-rules-per-source.md
+    checked_on: 2026-10-27
+    verified: true
+    note: >-
+      Largest share of stored rows a refresh may drop; observation dates may never be
+      dropped.
+
+fred:
+  api_url: https://api.stlouisfed.org/fred/series/observations
+  api_key_env: FRED_API_KEY
+  series:
+    - series_id: fred_cpiaucsl
+      fred_id: CPIAUCSL
+      frequency: monthly
+      units: index_1982_1984_100
+      publication_lag_days:
+        value: 45
+        unit: days_after_period_end
+        source_url: https://www.bls.gov/schedule/news_release/cpi.htm
+        checked_on: 2026-10-27
+        verified: true
+        note: >-
+          The BLS schedule releases the CPI 10 to 14 days after the reference month. 45 days
+          leaves a wide margin for earlier decades, when releases came later.
+    - series_id: fred_unrate
+      fred_id: UNRATE
+      frequency: monthly
+      units: percent
+      publication_lag_days:
+        value: 35
+        unit: days_after_period_end
+        source_url: https://www.bls.gov/schedule/news_release/empsit.htm
+        checked_on: 2026-10-27
+        verified: true
+        note: >-
+          The Employment Situation is released 2 to 8 days after the reference month. 35 days
+          leaves a wide margin for earlier decades.
+    - series_id: fred_dgs3mo
+      fred_id: DGS3MO
+      frequency: daily
+      units: percent
+      publication_lag_days:
+        value: 4
+        unit: days_after_period_end
+        source_url: https://www.federalreserve.gov/releases/h15/
+        checked_on: 2026-10-27
+        verified: true
+        note: >-
+          H.15 is posted Monday to Friday at 4:15pm for the previous business day; 4 days
+          cover a weekend followed by a holiday.
+    - series_id: fred_dgs2
+      fred_id: DGS2
+      frequency: daily
+      units: percent
+      publication_lag_days:
+        value: 4
+        unit: days_after_period_end
+        source_url: https://www.federalreserve.gov/releases/h15/
+        checked_on: 2026-10-27
+        verified: true
+        note: >-
+          H.15 is posted Monday to Friday at 4:15pm for the previous business day; 4 days
+          cover a weekend followed by a holiday.
+    - series_id: fred_dgs10
+      fred_id: DGS10
+      frequency: daily
+      units: percent
+      publication_lag_days:
+        value: 4
+        unit: days_after_period_end
+        source_url: https://www.federalreserve.gov/releases/h15/
+        checked_on: 2026-10-27
+        verified: true
+        note: >-
+          H.15 is posted Monday to Friday at 4:15pm for the previous business day; 4 days
+          cover a weekend followed by a holiday.
+    - series_id: fred_dff
+      fred_id: DFF
+      frequency: daily
+      units: percent
+      publication_lag_days:
+        value: 4
+        unit: days_after_period_end
+        source_url: https://www.federalreserve.gov/releases/h15/
+        checked_on: 2026-10-27
+        verified: true
+        note: >-
+          The effective federal funds rate is part of H.15, posted Monday to Friday at 4:15pm
+          for the previous business day; 4 days cover a weekend followed by a holiday.
+    - series_id: fred_nasdaqcom
+      fred_id: NASDAQCOM
+      frequency: daily
+      units: index_1971_02_05_100
+      publication_lag_days:
+        value: 1
+        unit: days_after_period_end
+        source_url: https://www.nasdaq.com/stock-market-trading-hours-for-nasdaq
+        checked_on: 2026-10-27
+        verified: false
+        reason: >-
+          The page returned HTTP 503 on 2026-10-27. The index closes with the regular session
+          at 16:00 New York time; one day of margin is added.
+    - series_id: fred_nasdaq100
+      fred_id: NASDAQ100
+      frequency: daily
+      units: index_1985_01_31_125
+      publication_lag_days:
+        value: 1
+        unit: days_after_period_end
+        source_url: https://www.nasdaq.com/stock-market-trading-hours-for-nasdaq
+        checked_on: 2026-10-27
+        verified: false
+        reason: >-
+          The page returned HTTP 503 on 2026-10-27. The index closes with the regular session
+          at 16:00 New York time; one day of margin is added.
+    - series_id: fred_dcoilwtico
+      fred_id: DCOILWTICO
+      frequency: daily
+      units: usd_per_barrel
+      publication_lag_days:
+        value: 7
+        unit: days_after_period_end
+        source_url: https://www.eia.gov/petroleum/data.php
+        checked_on: 2026-10-27
+        verified: true
+        note: >-
+          The EIA lists spot prices as released daily; 7 days cover weekends, holidays and
+          delayed postings.
+    - series_id: fred_baa10y
+      fred_id: BAA10Y
+      frequency: daily
+      units: percent
+      publication_lag_days:
+        value: 7
+        unit: days_after_period_end
+        source_url: https://www.federalreserve.gov/releases/h15/
+        checked_on: 2026-10-27
+        verified: false
+        reason: >-
+          Moody's publication time for its daily Baa yield is not documented on a page that
+          could be read without displaying current values. 7 days is a conservative margin
+          over the 10-year yield's H.15 lag of 4 days.
+
+shiller:
+  page_url: https://shillerdata.com/
+  link_name: ie_data.xls
+  sheet: Data
+  date_header: Date
+  price_lag_days:
+    value: 0
+    unit: days_after_period_end
+    source_url: https://shillerdata.com/
+    checked_on: 2026-10-27
+    verified: true
+    note: >-
+      The page states that stock prices are monthly averages of daily closing prices, so a
+      month's price is complete at the end of that month.
+  earnings_dividends_lag_days:
+    value: 183
+    unit: days_after_quarter_end
+    source_url: https://www.sec.gov/about/forms/form10-k.pdf
+    checked_on: 2026-10-27
+    verified: true
+    note: >-
+      Monthly dividends and earnings are interpolated from S&P four-quarter totals
+      (shillerdata.com), so a month depends on its quarter's total; years before
+      annual_before follow the annual rule (decision 0013). Annual reports are due
+      60, 75 or 90 days after the fiscal year end (Form 10-K, General Instruction A); 183
+      days adds about one further quarter for compilation and for the interpolation.
+  series:
+    - series_id: shiller_sp_price
+      header: P
+      units: index_points
+      rule: month_end
+    - series_id: shiller_sp_dividend
+      header: D
+      units: index_points_per_year
+      rule: quarter_end
+      annual_before:
+        value: 1926
+        unit: year
+        source_url: https://shillerdata.com/
+        checked_on: 2026-10-27
+        verified: true
+        note: >-
+          Monthly figures are computed from S&P four-quarter totals since 1926; earlier
+          figures are interpolated from annual Cowles data.
+    - series_id: shiller_sp_earnings
+      header: E
+      units: index_points_per_year
+      rule: quarter_end
+      annual_before:
+        value: 1926
+        unit: year
+        source_url: https://shillerdata.com/
+        checked_on: 2026-10-27
+        verified: true
+        note: >-
+          Monthly figures are computed from S&P four-quarter totals since 1926; earlier
+          figures are interpolated from annual Cowles data.
+    - series_id: shiller_cpi
+      header: CPI
+      units: index_1982_1984_100
+      rule: follows
+      follows: fred_cpiaucsl
+      annual_before:
+        value: 1913
+        unit: year
+        source_url: https://shillerdata.com/
+        checked_on: 2026-10-27
+        verified: false
+        reason: >-
+          The page states that the CPI-U begins in 1913 and that earlier years splice in the
+          Warren and Pearson price index, without giving that index's frequency. It is
+          treated as annual, which can only delay known_at.
+    - series_id: shiller_long_rate
+      header: Rate GS10
+      units: percent
+      rule: follows
+      follows: fred_dgs10
+      annual_before:
+        value: 1953
+        unit: year
+        source_url: https://shillerdata.com/
+        checked_on: 2026-10-27
+        verified: false
+        reason: >-
+          The page does not name the long-rate source. The monthly 10-year Treasury yield
+          starts in April 1953; earlier values are treated as interpolated from annual
+          yields, which can only delay known_at.
+
+french:
+  base_url: https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/
+  publication_lag_days:
+    value: 90
+    unit: days_after_end_of_observation_month
+    source_url: https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html
+    checked_on: 2026-10-27
+    verified: true
+    note: >-
+      Observed release timing: on 2026-10-27 the data library page showed August 2026 as
+      the latest month, at least 57 days after that month's end. 90 days adds a margin of
+      about one monthly update cycle (decision 0013). The library recomputes its full
+      history at every update, so stored values are those of the download, not of the
+      original release.
+  files:
+    - file: F-F_Research_Data_Factors_CSV.zip
+      dataset: us3
+      frequency: monthly
+      columns: [Mkt-RF, SMB, HML, RF]
+      market_return: true
+    - file: F-F_Research_Data_Factors_daily_CSV.zip
+      dataset: us3
+      frequency: daily
+      columns: [Mkt-RF, SMB, HML, RF]
+      market_return: true
+    - file: 49_Industry_Portfolios_CSV.zip
+      dataset: ind49
+      frequency: monthly
+      section: Average Value Weighted Returns -- Monthly
+      columns: &ind49 [Agric, Food, Soda, Beer, Smoke, Toys, Fun, Books, Hshld, Clths, Hlth, MedEq,
+        Drugs, Chems, Rubbr, Txtls, BldMt, Cnstr, Steel, FabPr, Mach, ElcEq, Autos, Aero,
+        Ships, Guns, Gold, Mines, Coal, Oil, Util, Telcm, PerSv, BusSv, Hardw, Softw, Chips,
+        LabEq, Paper, Boxes, Trans, Whlsl, Rtail, Meals, Banks, Insur, RlEst, Fin, Other]
+    - file: 49_Industry_Portfolios_daily_CSV.zip
+      dataset: ind49
+      frequency: daily
+      section: Average Value Weighted Returns -- Daily
+      columns: *ind49
+    - file: Portfolios_Formed_on_ME_CSV.zip
+      dataset: size
+      frequency: monthly
+      section: Value Weight Returns -- Monthly
+      columns: &deciles [Lo 10, Dec 2, Dec 3, Dec 4, Dec 5, Dec 6, Dec 7, Dec 8, Dec 9, Hi 10]
+    - file: Portfolios_Formed_on_ME_Daily_CSV.zip
+      dataset: size
+      frequency: daily
+      section: Value Weight Returns -- Daily
+      columns: *deciles
+    - file: Developed_3_Factors_CSV.zip
+      dataset: dev3
+      frequency: monthly
+      columns: [Mkt-RF, SMB, HML, RF]
+      market_return: true
+    - file: Developed_3_Factors_Daily_CSV.zip
+      dataset: dev3
+      frequency: daily
+      columns: [Mkt-RF, SMB, HML, RF]
+      market_return: true
+    - file: Europe_3_Factors_CSV.zip
+      dataset: eur3
+      frequency: monthly
+      columns: [Mkt-RF, SMB, HML, RF]
+      market_return: true
+    - file: Europe_3_Factors_Daily_CSV.zip
+      dataset: eur3
+      frequency: daily
+      columns: [Mkt-RF, SMB, HML, RF]
+      market_return: true
+    - file: Japan_3_Factors_CSV.zip
+      dataset: jpn3
+      frequency: monthly
+      columns: [Mkt-RF, SMB, HML, RF]
+      market_return: true
+    - file: Japan_3_Factors_Daily_CSV.zip
+      dataset: jpn3
+      frequency: daily
+      columns: [Mkt-RF, SMB, HML, RF]
+      market_return: true
+    - file: Asia_Pacific_ex_Japan_3_Factors_CSV.zip
+      dataset: apxj3
+      frequency: monthly
+      columns: [Mkt-RF, SMB, HML, RF]
+      market_return: true
+    - file: Asia_Pacific_ex_Japan_3_Factors_Daily_CSV.zip
+      dataset: apxj3
+      frequency: daily
+      columns: [Mkt-RF, SMB, HML, RF]
+      market_return: true
+    - file: North_America_3_Factors_CSV.zip
+      dataset: nam3
+      frequency: monthly
+      columns: [Mkt-RF, SMB, HML, RF]
+      market_return: true
+    - file: North_America_3_Factors_Daily_CSV.zip
+      dataset: nam3
+      frequency: daily
+      columns: [Mkt-RF, SMB, HML, RF]
+      market_return: true
+
+ecb:
+  api_url: https://data-api.ecb.europa.eu/service/data
+  datasets:
+    - flow: YC
+      publication:
+        value: {target_days_after: 1, time: "12:00"}
+        unit: target_business_days_after_observation_and_berlin_time
+        source_url: https://www.ecb.europa.eu/stats/financial_markets_and_interest_rates/euro_area_yield_curves/html/index.en.html
+        checked_on: 2026-10-27
+        verified: true
+        note: >-
+          The curves are updated every TARGET business day at noon (12:00 CET). The page does
+          not say whether a release holds that day's or the previous day's market, so the
+          next TARGET business day is used.
+      series:
+        - {series_id: ecb_yc_aaa_3m, key: B.U2.EUR.4F.G_N_A.SV_C_YM.SR_3M, units: percent}
+        - {series_id: ecb_yc_aaa_2y, key: B.U2.EUR.4F.G_N_A.SV_C_YM.SR_2Y, units: percent}
+        - {series_id: ecb_yc_aaa_10y, key: B.U2.EUR.4F.G_N_A.SV_C_YM.SR_10Y, units: percent}
+        - {series_id: ecb_yc_all_3m, key: B.U2.EUR.4F.G_N_C.SV_C_YM.SR_3M, units: percent}
+        - {series_id: ecb_yc_all_2y, key: B.U2.EUR.4F.G_N_C.SV_C_YM.SR_2Y, units: percent}
+        - {series_id: ecb_yc_all_10y, key: B.U2.EUR.4F.G_N_C.SV_C_YM.SR_10Y, units: percent}
+    - flow: EST
+      publication:
+        value: {target_days_after: 1, time: "09:00"}
+        unit: target_business_days_after_observation_and_berlin_time
+        source_url: https://www.ecb.europa.eu/stats/financial_markets_and_interest_rates/euro_short-term_rate/html/eurostr_overview.en.html
+        checked_on: 2026-10-27
+        verified: true
+        note: >-
+          The €STR for a TARGET business day is published at 08:00 CET on the next one and
+          may be revised once at 09:00 CET that day; 09:00 is used.
+      series:
+        - {series_id: ecb_estr, key: B.EU000A2X2A25.WT, units: percent}
+    - flow: EXR
+      publication:
+        value: {target_days_after: 0, time: "17:00"}
+        unit: target_business_days_after_observation_and_berlin_time
+        source_url: https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html
+        checked_on: 2026-10-27
+        verified: true
+        note: >-
+          The reference rates are usually updated at around 16:00 CET every working day;
+          one hour of margin is added.
+      series:
+        - {series_id: ecb_exr_usd, key: D.USD.EUR.SP00.A, units: usd_per_eur}
+        - {series_id: ecb_exr_gbp, key: D.GBP.EUR.SP00.A, units: gbp_per_eur}
+        - {series_id: ecb_exr_chf, key: D.CHF.EUR.SP00.A, units: chf_per_eur}
+        - {series_id: ecb_exr_jpy, key: D.JPY.EUR.SP00.A, units: jpy_per_eur}

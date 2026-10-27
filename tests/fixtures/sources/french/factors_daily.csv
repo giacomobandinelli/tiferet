@@ -1,0 +1,11 @@
+This file was created using a synthetic test database.
+The Tbill return is the simple daily rate that, over the number of trading days
+in the month, compounds to 1-month TBill rate from a synthetic source.
+
+,Mkt-RF,SMB,HML,RF
+20220929,   -2.11,   -0.30,    0.42,    0.010
+20220930,   -1.51,    0.22,   -0.60,    0.010
+20221003,    2.45,   -0.67,    0.37,    0.012
+20221031,   -0.81,    0.15,    1.24,    0.012
+
+Copyright 2022 Synthetic Fixture

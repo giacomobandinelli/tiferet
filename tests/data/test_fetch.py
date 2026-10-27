@@ -1,0 +1,202 @@
+"""Tests for the HTTP fetch layer with a fake opener (decision 0013)."""
+
+import http.client
+import io
+import socket
+import ssl
+import urllib.error
+import urllib.request
+from collections.abc import Callable
+from email.message import Message
+from types import TracebackType
+from typing import Any
+
+import pytest
+
+from tiferet.data.fetch import (
+    USER_AGENT,
+    FetchError,
+    HttpFetcher,
+    MissingKeyError,
+    api_key,
+    build_url,
+    redact,
+)
+
+URL = "https://api.example.org/series"
+KEY = "secret-key-9876543210"
+
+
+class FakeResponse:
+    def __init__(self, body: bytes, declared: int | None = None) -> None:
+        self._body = io.BytesIO(body)
+        self.headers = Message()
+        if declared is not None:
+            self.headers["Content-Length"] = str(declared)
+
+    def read(self, amt: int, /) -> bytes:
+        return self._body.read(amt)
+
+    def __enter__(self) -> "FakeResponse":
+        return self
+
+    def __exit__(
+        self,
+        kind: type[BaseException] | None,
+        error: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        return None
+
+
+def http_error(code: int, retry_after: str | None = None) -> urllib.error.HTTPError:
+    headers = Message()
+    if retry_after is not None:
+        headers["Retry-After"] = retry_after
+    return urllib.error.HTTPError(f"{URL}?api_key={KEY}", code, "error", headers, None)
+
+
+class FakeOpener:
+    """Replays a script of responses and errors, recording each request."""
+
+    def __init__(self, *script: bytes | FakeResponse | Exception) -> None:
+        self.script = list(script)
+        self.requests: list[urllib.request.Request] = []
+        self.timeouts: list[float] = []
+
+    def open(self, request: urllib.request.Request, *, timeout: float) -> FakeResponse:
+        self.requests.append(request)
+        self.timeouts.append(timeout)
+        step = self.script.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return step if isinstance(step, FakeResponse) else FakeResponse(step)
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def __call__(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def fetcher(opener: FakeOpener, clock: Clock, **kwargs: Any) -> HttpFetcher:
+    return HttpFetcher(opener=opener, clock=clock, sleep=clock.sleep, **kwargs)
+
+
+def test_success_sends_user_agent_and_timeout_and_redacts_the_url() -> None:
+    opener, clock = FakeOpener(b"payload"), Clock()
+    result = fetcher(opener, clock, timeout=12.0).get(URL, {"api_key": KEY, "id": "X"})
+    assert result.content == b"payload"
+    assert result.url == f"{URL}?api_key=REDACTED&id=X"
+    assert result.retrieved_at.tzname() == "UTC"
+    assert opener.requests[0].get_header("User-agent") == USER_AGENT
+    assert opener.requests[0].full_url == f"{URL}?api_key={KEY}&id=X"
+    assert opener.timeouts == [12.0]
+    assert KEY not in repr(result)
+
+
+def test_transient_errors_are_retried_with_backoff() -> None:
+    opener, clock = FakeOpener(http_error(503), urllib.error.URLError("reset"), b"ok"), Clock()
+    assert fetcher(opener, clock, backoff=2.0).get(URL).content == b"ok"
+    assert clock.sleeps == [1.0, 2.0]
+
+
+def test_retry_after_is_honoured() -> None:
+    opener, clock = FakeOpener(http_error(429, "7"), b"ok"), Clock()
+    fetcher(opener, clock).get(URL)
+    assert clock.sleeps == [7.0]
+
+
+def test_gives_up_after_the_last_attempt_without_leaking_the_key() -> None:
+    opener, clock = FakeOpener(*(http_error(500) for _ in range(3))), Clock()
+    with pytest.raises(FetchError, match="HTTP 500") as raised:
+        fetcher(opener, clock, attempts=3).get(URL, {"api_key": KEY})
+    assert KEY not in str(raised.value)
+    assert raised.value.__cause__ is None and raised.value.__suppress_context__
+    assert len(opener.requests) == 3
+
+
+def test_client_errors_are_not_retried() -> None:
+    opener, clock = FakeOpener(http_error(404), b"unused"), Clock()
+    with pytest.raises(FetchError, match="HTTP 404"):
+        fetcher(opener, clock).get(URL)
+    assert len(opener.requests) == 1
+
+
+def test_requests_to_one_host_are_spaced() -> None:
+    opener, clock = FakeOpener(b"a", b"b", b"c"), Clock()
+    client = fetcher(opener, clock, min_interval=1.5)
+    client.get(URL)
+    clock.now += 0.5
+    client.get(URL)
+    client.get("https://other.example.org/x")
+    assert clock.sleeps == [1.0]
+
+
+def test_oversized_response_is_refused() -> None:
+    opener, clock = FakeOpener(b"x" * 11), Clock()
+    with pytest.raises(FetchError, match="larger than 10 bytes"):
+        fetcher(opener, clock, max_bytes=10).get(URL)
+
+
+def test_real_opener_cannot_reach_the_network_in_tests() -> None:
+    with pytest.raises(FetchError):
+        HttpFetcher(attempts=1).get("https://example.org/")
+
+
+def test_url_helpers() -> None:
+    assert build_url(URL, {"a": "1"}) == f"{URL}?a=1"
+    assert build_url(f"{URL}?a=1", {"b": "2"}) == f"{URL}?a=1&b=2"
+    assert redact(f"{URL}?api_key={KEY}&x=1") == f"{URL}?api_key=REDACTED&x=1"
+
+
+def test_api_key_is_read_by_name() -> None:
+    assert api_key("FRED_API_KEY", {"FRED_API_KEY": KEY}) == KEY
+    with pytest.raises(MissingKeyError, match="FRED_API_KEY is not set"):
+        api_key("FRED_API_KEY", {})
+
+
+def test_cut_short_bodies_and_read_errors_are_retried() -> None:
+    script = (
+        FakeResponse(b"part", declared=10),
+        http.client.IncompleteRead(b"part"),
+        ssl.SSLError("bad record"),
+        FakeResponse(b"0123456789", declared=10),
+    )
+    opener, clock = FakeOpener(*script), Clock()
+    assert fetcher(opener, clock, attempts=4).get(URL).content == b"0123456789"
+    assert len(opener.requests) == 4
+
+
+def test_cut_short_body_on_the_last_attempt_fails() -> None:
+    opener, clock = FakeOpener(FakeResponse(b"part", declared=10)), Clock()
+    with pytest.raises(FetchError, match="TruncatedError"):
+        fetcher(opener, clock, attempts=1).get(URL)
+
+
+def test_long_retry_after_fails_instead_of_waiting() -> None:
+    opener, clock = FakeOpener(http_error(429, "86400"), b"unused"), Clock()
+    with pytest.raises(FetchError, match="asks to wait 86400 s"):
+        fetcher(opener, clock).get(URL)
+    assert clock.sleeps == []
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: socket.getaddrinfo("example.org", 443),
+        lambda: socket.create_connection(("example.org", 443)),
+        lambda: socket.socket().connect_ex(("127.0.0.1", 9)),
+    ],
+    ids=["dns", "tcp", "connect-ex"],
+)
+def test_the_test_process_has_no_network(call: Callable[[], object]) -> None:
+    with pytest.raises(OSError, match="tests do not use the network"):
+        call()

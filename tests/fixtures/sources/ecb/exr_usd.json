@@ -1,0 +1,50 @@
+{
+  "header": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "test": false,
+    "prepared": "2022-12-31T00:00:00.000+01:00",
+    "sender": {"id": "ECB"}
+  },
+  "dataSets": [
+    {
+      "action": "Replace",
+      "validFrom": "2022-12-31T00:00:00.000+01:00",
+      "series": {
+        "0:0:0:0:0": {
+          "observations": {
+            "0": [1.0750],
+            "1": [null],
+            "2": [1.0640],
+            "3": [1.0666]
+          }
+        }
+      }
+    }
+  ],
+  "structure": {
+    "links": [],
+    "name": "Exchange Rates",
+    "dimensions": {
+      "series": [
+        {"id": "FREQ", "name": "Frequency", "values": [{"id": "D", "name": "Daily"}]},
+        {"id": "CURRENCY", "name": "Currency", "values": [{"id": "USD", "name": "US dollar"}]},
+        {"id": "CURRENCY_DENOM", "name": "Currency denominator", "values": [{"id": "EUR", "name": "Euro"}]},
+        {"id": "EXR_TYPE", "name": "Exchange rate type", "values": [{"id": "SP00", "name": "Spot"}]},
+        {"id": "EXR_SUFFIX", "name": "Series variation - EXR context", "values": [{"id": "A", "name": "Average"}]}
+      ],
+      "observation": [
+        {
+          "id": "TIME_PERIOD",
+          "name": "Time period or range",
+          "role": "time",
+          "values": [
+            {"id": "2022-04-14", "name": "2022-04-14"},
+            {"id": "2022-12-28", "name": "2022-12-28"},
+            {"id": "2022-12-29", "name": "2022-12-29"},
+            {"id": "2022-12-30", "name": "2022-12-30"}
+          ]
+        }
+      ]
+    }
+  }
+}

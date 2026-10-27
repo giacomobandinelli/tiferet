@@ -80,3 +80,21 @@ def test_point_in_time_view_holds_one_version_per_observation() -> None:
     )
     with pytest.raises(SilverSchemaError):
         validate_silver(pd.concat([frame(), later]), PIT_SCHEMA)
+
+
+def test_vintage_kind_is_an_optional_column() -> None:
+    validated = validate_silver(frame(vintage_kind=["approximated"]))
+    assert list(validated["vintage_kind"]) == ["approximated"]
+    later = frame(
+        known_at=pd.to_datetime(["2022-03-15"]).tz_localize("Europe/Berlin"),
+        value=[101.0],
+        vintage_kind=["actual"],
+    )
+    both = validate_silver(pd.concat([frame(vintage_kind=["approximated"]), later]))
+    assert list(validate_silver(both.iloc[[1]], PIT_SCHEMA)["vintage_kind"]) == ["actual"]
+
+
+@pytest.mark.parametrize("kind", [["guessed"], [None]], ids=["unknown", "null"])
+def test_invalid_vintage_kind_is_refused(kind: list[str | None]) -> None:
+    with pytest.raises(SilverSchemaError):
+        validate_silver(frame(vintage_kind=kind))
