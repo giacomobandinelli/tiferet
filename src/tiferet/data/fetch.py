@@ -7,11 +7,18 @@ download's error names the server's own error text (truncated), the reason of a 
 failure, the redirect chain and the final status. API keys are read from the environment by
 name and never appear in a logged URL, an error message or the manifest: `Download.url` and
 every error text are redacted.
+
+HTTPS connections verify the server's certificate and host name against the operating
+system's certificate store, through `truststore`, not against a bundled list. On a machine
+where security software inspects HTTPS traffic and re-signs it with its own root, that root
+is installed in the system store and the download works; with a bundled list it fails with
+CERTIFICATE_VERIFY_FAILED. Verification is never switched off (decision 0013).
 """
 
 import http.client
 import json
 import os
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -24,6 +31,7 @@ from typing import IO, Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pandas as pd
+import truststore
 
 USER_AGENT = f"tiferet/{version('tiferet')} (+https://github.com/giacomobandinelli/tiferet)"
 SECRET_PARAMS = frozenset({"api_key"})
@@ -91,6 +99,11 @@ class Response(Protocol):
 
 class Opener(Protocol):
     def open(self, request: urllib.request.Request, *, timeout: float) -> Response: ...
+
+
+def tls_context() -> ssl.SSLContext:
+    """A client context that verifies certificates and host names against the system store."""
+    return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 
 
 def build_url(url: str, params: Mapping[str, str] | None = None) -> str:
@@ -196,7 +209,9 @@ class HttpFetcher:
         self._min_interval, self._max_bytes = min_interval, max_bytes
         if opener is None:
             self._redirects: RedirectLog | None = redirect_log or RedirectLog()
-            self._opener: Opener = urllib.request.build_opener(self._redirects)
+            self._opener: Opener = urllib.request.build_opener(
+                self._redirects, urllib.request.HTTPSHandler(context=tls_context())
+            )
         else:
             self._redirects, self._opener = redirect_log, opener
         self._clock, self._sleep = clock, sleep

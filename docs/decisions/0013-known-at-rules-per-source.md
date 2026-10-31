@@ -63,6 +63,11 @@ Raw files must be ingested without exposing the holdout, and agents must not dow
 - The 90 days come from observed release timing. On 2026-10-27 the data library page showed August 2026 as its latest month, at least 57 days after that month's end. 90 days adds a margin of about one monthly update cycle.
 - This rests on one observation of a monthly cadence with irregular timing, so the margin errs late. A later observation of a longer delay raises the value.
 - Missing values (-99.99, -999) are dropped. Returns are stored as decimal fractions. The market return of each 3-factor file is derived as Mkt-RF + RF.
+- Tables are found by what the real files contain, as the owner's `--inspect` run showed (2026-10-27):
+  - A portfolio table is selected by its title and date width, and exactly one must match. Titles are compared ignoring case, repeated spaces, "Weight" against "Weighted" and a leading "Average": the library writes "Average Value Weight Returns -- Monthly" for size portfolios and "Average Value Weighted Returns -- Monthly" or "-- Daily" for industries and the daily size file.
+  - A 3-factor table has no title; a note stands above it. It is the first table with the expected date width whose header holds Mkt-RF, SMB, HML and RF. Annual tables are skipped by their 4-digit dates.
+  - A header line may be padded with whitespace and may lack its leading comma, in which case its fields must be exactly the row's value columns. A table with no recognisable header is never guessed at: it fails with the number of such tables, and `--inspect` prints the non-numeric lines directly above it, never a data row, so the layout can be reported.
+  - Columns are matched by a series word, not by their spelling: "2-Dec" in the monthly size file and "Dec 2" in the daily one are both `dec2` (`kf_size_dec2_m`, `kf_size_dec2_d`), "Lo 10" is `lo10`, "<= 0" is `le0`. A header with characters outside letters, digits, spaces and hyphens, or two headers with one word, is refused, as is a configured column the table lacks. The other size columns ("Lo 30", "Qnt 2" and so on) are known but not ingested.
 - Every row is `approximated`.
 
 **ECB.**
@@ -77,6 +82,12 @@ Raw files must be ingested without exposing the holdout, and agents must not dow
 
 - The TARGET calendar treats New Year, Good Friday, Easter Monday, 1 May, 25 and 26 December, and 31 December in 1999–2001 as closed. A day wrongly treated as closed only delays `known_at`.
 - Every ECB row is `approximated`.
+
+**TLS.**
+
+- Every HTTPS download verifies the server's certificate and host name against the operating system's certificate store, through the pinned `truststore` package, instead of the bundled list of the Python installation.
+- Reason: on the owner's Windows PC, the Shiller download failed with `CERTIFICATE_VERIFY_FAILED: self-signed certificate in certificate chain`, most likely because antivirus software inspects HTTPS downloads and re-signs them with its own root. That root is trusted by the operating system and not by the bundled list. FRED and ECB passed because their connections were not re-signed.
+- Verification is never disabled, for one source or for all: no `CERT_NONE`, unverified context, `check_hostname = False` or `verify=False` appears in the package, and a test searches for them. If the failure persists with the system store, the fix is to install the intercepting root in the system store, not to relax the check.
 
 **Ingestion.**
 
@@ -96,7 +107,7 @@ Raw files must be ingested without exposing the holdout, and agents must not dow
 - It downloads every configured item, parses and stamps it, and prints row counts per partition. It prints no values and writes nothing.
 - FRED and ECB smoke requests stop at 2022-12-31.
 - `--inspect` downloads each configured item and prints its structure only, never a value or an observation date:
-  - French: each table's title line, column header line, row count and date widths;
+  - French: each table's title line, column header line, row count and date widths; for a table without a header line, the non-numeric lines above its first row;
   - Shiller: the data link, the sheet names and the text cells above the first data row;
   - ECB: the SDMX dimension ids and series codes;
   - FRED: whether a vintage request up to the development end, and one over the full real-time range, succeed, with FRED's error text if not; observations stop at the development end in both.

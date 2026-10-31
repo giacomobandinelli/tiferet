@@ -118,12 +118,41 @@ class Shiller(_Model):
         return self
 
 
+_COLUMN_HEADER = re.compile(r"<= ?\d+|[a-z0-9]+(?:[ \-][a-z0-9]+)*")
+_DECILE_FIRST = re.compile(r"^(\d+)-dec$")
+
+
+def column_key(name: str) -> str | None:
+    """The series word of a French column header, or None for a header of unknown form.
+
+    Case and repeated spaces are ignored. A word and its number are joined, so "Dec 2" and
+    the library's "2-Dec" both give `dec2`, "Lo 10" gives `lo10` and "<= 0" gives `le0`; other
+    hyphens and spaces become underscores ("Mkt-RF" gives `mkt_rf`). A header with any other
+    character, such as a slash or a bracket, has no key.
+    """
+    text = " ".join(name.lower().split())
+    if not _COLUMN_HEADER.fullmatch(text):
+        return None
+    text = _DECILE_FIRST.sub(r"dec\1", text).replace("<=", "le")
+    text = re.sub(r"([a-z]) (\d)", r"\1\2", text)
+    return re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+
+
+def title_key(title: str) -> str:
+    """A table title for comparison: lower case, single spaces, "Weighted" as "Weight" and
+    without a leading "Average", which the library uses in some files and not in others."""
+    text = " ".join(title.lower().split())
+    text = re.sub(r"\bweighted\b", "weight", text)
+    return re.sub(r"^average ", "", text)
+
+
 class FrenchFile(_Model):
     file: str = Field(pattern=r"^[A-Za-z0-9_\-]+_CSV\.zip$")
     dataset: str = Field(pattern=r"^[a-z0-9]+$")
     frequency: Frequency
     section: str | None = None
-    """The title of the table, ignoring case and repeated spaces; the first table if absent."""
+    """The title of the table, compared by `title_key`. Absent for a 3-factor file, whose
+    table has no title and is found by its header."""
     columns: tuple[str, ...] = Field(min_length=1)
     market_return: bool = False
     """Also derive the market return, Mkt-RF + RF."""
@@ -132,14 +161,19 @@ class FrenchFile(_Model):
     def _shape(self) -> Self:
         if self.frequency is Frequency.QUARTERLY:
             raise ValueError("French files are daily or monthly")
+        keys = [column_key(c) for c in self.columns]
+        if None in keys or len(set(keys)) != len(keys):
+            raise ValueError("columns must have a known header form and distinct series words")
         if self.market_return and not {"Mkt-RF", "RF"} <= set(self.columns):
             raise ValueError("market_return needs the Mkt-RF and RF columns")
         return self
 
     def series_id(self, column: str) -> str:
-        """`kf_<dataset>_<column>_<d|m>`, the column reduced to lower-case words."""
-        name = re.sub(r"[^a-z0-9]+", "_", column.lower()).strip("_")
-        return f"kf_{self.dataset}_{name}_{self.frequency.value[0]}"
+        """`kf_<dataset>_<column key>_<d|m>`, for example `kf_size_dec2_m`."""
+        key = column_key(column)
+        if key is None:
+            raise ValueError(f"unknown column header {column!r}")
+        return f"kf_{self.dataset}_{key}_{self.frequency.value[0]}"
 
     def series_ids(self) -> tuple[str, ...]:
         derived = ("mkt",) if self.market_return else ()

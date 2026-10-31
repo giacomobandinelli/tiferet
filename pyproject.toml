@@ -14,6 +14,7 @@ dependencies = [
     "python-calamine==0.9.0",
     "python-dotenv==1.2.4",
     "pyyaml==6.0.3",
+    "truststore==0.10.5",
 ]
 
 [build-system]

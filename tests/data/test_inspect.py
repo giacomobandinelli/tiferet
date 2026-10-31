@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from data.adapter_support import FIXTURES, FakeFetcher, fixture
+from data.adapter_support import FIXTURES, FakeFetcher, fixture, french_variant
 from fixtures.build_sources import FRENCH_ZIPS, SHILLER_ROWS
 from tiferet.data import ecb, french, shiller
 from tiferet.data.cli import main
@@ -50,12 +50,22 @@ def test_french_prints_titles_and_headers_only() -> None:
     assert "  title: Annual Factors: January-December" in lines
     assert "  header: Mkt-RF, SMB, HML, RF" in lines
     assert "  rows: 5, date widths [6]" in lines
+    assert "  title: Average Value Weight Returns -- Monthly" in lines
+    assert (
+        "  header: <= 0, Lo 30, Med 40, Hi 30, Lo 20, Qnt 2, Qnt 3, Qnt 4, Hi 20, Lo 10, 2-Dec, "
+        + ("3-Dec, 4-Dec, 5-Dec, 6-Dec, 7-Dec, 8-Dec, 9-Dec, Hi 10")
+        in lines
+    )
+    assert any(
+        line.startswith("  header: <= 0, Lo 30") and "Dec 2, Dec 3" in line for line in lines
+    )
+    assert "  title: Missing data are indicated by -99.99." in lines
     assert leaked(french_tokens(), text) == []
 
 
 def test_french_reports_a_failed_file_and_continues() -> None:
     def respond(url: str, params: dict[str, str]) -> bytes:
-        if "daily" in url:
+        if "Factors_daily" in url:
             raise FetchError("HTTP 404 from https://x: Not Found", status=404, detail="Not Found")
         return fixture("french", url.rsplit("/", 1)[1])
 
@@ -164,3 +174,33 @@ def test_cli_inspect_exits_with_failure_when_an_item_fails() -> None:
         sources=french_sources,
     )
     assert code == 1
+
+
+def test_french_prints_the_lines_above_a_table_without_a_header() -> None:
+    archive = "Asia_Pacific_ex_Japan_3_Factors_Daily_CSV.zip"
+    zips = {name: fixture("french", name) for name in FRENCH_ZIPS}
+    zips[archive] = french_variant(archive, ",Mkt-RF,SMB,HML,RF\n", "")
+    fake = FakeFetcher(lambda url, params: zips[url.rsplit("/", 1)[1]])
+    inspection = french.inspect(fake, french_sources())
+    lines = inspection.lines
+    start = lines.index(f"{archive}: 1 tables")
+    assert lines[start + 1 : start + 6] == [
+        "  title: The Tbill return is from a synthetic source.",
+        "  header: none found; lines above the first row:",
+        "    | This file was created using a synthetic test database. Daily returns are for "
+        "synthetic markets.",
+        "    | The Tbill return is from a synthetic source.",
+        "  rows: 4, date widths [8]",
+    ]
+    assert inspection.failures == 0
+    assert leaked(french_tokens(), "\n".join(lines)) == []
+
+
+def test_french_shows_a_header_that_is_not_recognised_as_one() -> None:
+    """A header of the wrong width stays visible among the lines above the table."""
+    archive = "Asia_Pacific_ex_Japan_3_Factors_Daily_CSV.zip"
+    zips = {name: fixture("french", name) for name in FRENCH_ZIPS}
+    zips[archive] = french_variant(archive, ",Mkt-RF,SMB,HML,RF\n", "Date;Mkt-RF;SMB;HML;RF\n")
+    fake = FakeFetcher(lambda url, params: zips[url.rsplit("/", 1)[1]])
+    lines = french.inspect(fake, french_sources()).lines
+    assert "    | Date;Mkt-RF;SMB;HML;RF" in lines
