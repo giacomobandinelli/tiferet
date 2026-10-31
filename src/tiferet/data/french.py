@@ -151,6 +151,26 @@ def _has_columns(table: Table, file: FrenchFile) -> bool:
     return {column_key(c) for c in file.columns} <= keys
 
 
+def _no_factor_table(sized: list[Table], file: FrenchFile) -> str:
+    """Why no table of the file's date width holds every configured column."""
+    wanted = {column_key(c) for c in file.columns}
+    headed = [t for t in sized if t.columns is not None]
+    for table in headed:
+        assert table.columns is not None
+        present = {column_key(c) for c in table.columns}
+        if present & wanted:
+            lacking = [c for c in file.columns if column_key(c) not in present]
+            return (
+                f"the {file.frequency} table lacks configured columns {lacking}; "
+                f"its header is {', '.join(table.columns)}"
+            )
+    unlabelled = len(sized) - len(headed)
+    return (
+        f"no table with {file.frequency} dates and columns {list(file.columns)}; "
+        f"{unlabelled} tables of that date width have no header line"
+    )
+
+
 def select(found: list[Table], file: FrenchFile) -> Table:
     """The configured table.
 
@@ -165,12 +185,7 @@ def select(found: list[Table], file: FrenchFile) -> Table:
     if file.section is None:
         matches = [t for t in sized if _has_columns(t, file)]
         if not matches:
-            unlabelled = sum(t.columns is None for t in sized)
-            raise SourceFormatError(
-                SOURCE,
-                f"{file.file}: no table with {file.frequency} dates and columns "
-                f"{list(file.columns)}; {unlabelled} tables of that date width have no header line",
-            )
+            raise SourceFormatError(SOURCE, f"{file.file}: {_no_factor_table(sized, file)}")
         table = matches[0]
     else:
         wanted = title_key(file.section)
@@ -221,6 +236,16 @@ def parse(content: bytes, file: FrenchFile) -> pd.DataFrame:
     if file.market_return:
         wide[MARKET] = wide["Mkt-RF"] + wide["RF"]
     return wide
+
+
+def all_missing(wide: pd.DataFrame, file: FrenchFile) -> list[str]:
+    """Series ids of the file's columns in which every value is a missing-value marker."""
+    columns = (*file.columns, MARKET) if file.market_return else file.columns
+    return [
+        series_id
+        for column, series_id in zip(columns, file.series_ids(), strict=True)
+        if wide[column].isna().all()
+    ]
 
 
 def stamp(wide: pd.DataFrame, file: FrenchFile, lag: int) -> list[pd.DataFrame]:
@@ -280,12 +305,15 @@ def collect(fetcher: Fetcher, sources: Sources, *, smoke: bool) -> Batch:
     config = sources.french
     downloads: list[Download] = []
     frames: list[pd.DataFrame] = []
+    missing: list[str] = []
     for file in config.files:
         result = fetcher.get(config.base_url + file.file)
-        frames.extend(stamp(parse(result.content, file), file, config.publication_lag_days.value))
+        wide = parse(result.content, file)
+        frames.extend(stamp(wide, file, config.publication_lag_days.value))
+        missing.extend(all_missing(wide, file))
         downloads.append(result)
     expected = tuple(i for f in config.files for i in f.series_ids())
-    return Batch(SOURCE, tuple(downloads), combine(frames), expected)
+    return Batch(SOURCE, tuple(downloads), combine(frames), expected, frozenset(missing))
 
 
 if __name__ == "__main__":

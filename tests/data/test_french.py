@@ -93,7 +93,7 @@ def test_output_passes_pit_get_and_respects_the_holdout_boundary(tmp_path: Path)
             "F-F_Research_Data_Factors_CSV.zip",
             ",Mkt-RF,SMB",
             ",MktRF,SMB",
-            "no table with monthly dates",
+            r"monthly table lacks configured columns \['Mkt-RF'\]",
         ),
         (
             "49_Industry_Portfolios_CSV.zip",
@@ -255,6 +255,29 @@ def test_headerless_factor_table_is_refused_and_named() -> None:
     archive = "Asia_Pacific_ex_Japan_3_Factors_Daily_CSV.zip"
     zips = {**ZIPS, archive: french_variant(archive, ",Mkt-RF,SMB,HML,RF\n", "")}
     with pytest.raises(SourceFormatError, match="1 tables of that date width have no header"):
+        french.collect(fetcher(zips), sources(), smoke=False)
+
+
+def _without_hml(text: str) -> str:
+    lines = []
+    for line in text.splitlines():
+        fields = line.split(",")
+        if fields[0].strip().isdigit() and len(fields) == 5:
+            fields = [*fields[:3], *fields[4:]]
+        lines.append(",".join(fields))
+    return "\n".join(lines).replace("Mkt-RF,SMB,HML,RF", "Mkt-RF,SMB,RF") + "\n"
+
+
+@pytest.mark.parametrize("drop_rows", [True, False], ids=["rows-without-hml", "rows-with-hml"])
+def test_factor_table_missing_hml_is_refused_not_skipped(drop_rows: bool) -> None:
+    archive = "Asia_Pacific_ex_Japan_3_Factors_Daily_CSV.zip"
+    text = french.read_csv(ZIPS[archive], archive)
+    if drop_rows:
+        variant = _without_hml(text)
+    else:
+        variant = text.replace(",Mkt-RF,SMB,HML,RF", ",Mkt-RF,SMB,RF")
+    zips = {**ZIPS, archive: french_variant(archive, text, variant)}
+    with pytest.raises(SourceFormatError, match=r"daily table lacks configured columns \['HML'\]"):
         french.collect(fetcher(zips), sources(), smoke=False)
 
 

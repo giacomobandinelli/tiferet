@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from tiferet.data import bronze
+from tiferet.data.errors import DataLossError
 from tiferet.data.fetch import Download, Fetcher
 from tiferet.data.schema import (
     KNOWN_AT,
@@ -66,6 +67,8 @@ class Batch:
     downloads: tuple[Download, ...]
     silver: pd.DataFrame
     expected: tuple[str, ...]
+    all_missing: frozenset[str] = frozenset()
+    """Series whose source column held only missing-value markers, so no row was kept."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "silver", validate_silver(self.silver))
@@ -82,6 +85,10 @@ def smoke_lines(batch: Batch) -> list[str]:
     total = sum(len(d.content) for d in batch.downloads)
     lines = [f"{batch.source}: {len(batch.downloads)} files, {total} bytes"]
     for series_id, rows in split_by_series(batch.silver, batch.expected).items():
+        if rows.empty:
+            note = " (all values missing)" if series_id in batch.all_missing else ""
+            lines.append(f"{series_id}: 0 rows{note}")
+            continue
         sealed = int(is_holdout(rows).sum())
         lines.append(
             f"{series_id}: {len(rows)} rows, {len(rows) - sealed} development, {sealed} sealed"
@@ -92,7 +99,15 @@ def smoke_lines(batch: Batch) -> list[str]:
 def ingest(
     batch: Batch, roots: SilverRoots, bronze_root: Path, max_row_loss: float
 ) -> list[Written]:
-    """Write the silver tables, then record the downloads in the manifest."""
+    """Write the silver tables, then record the downloads in the manifest.
+
+    A configured series with no rows is refused, and every such series is named.
+    """
+    present = set(batch.silver[SERIES_ID])
+    empty = [s for s in dict.fromkeys(batch.expected) if s not in present]
+    if empty:
+        named = [f"{s} (all values missing)" if s in batch.all_missing else s for s in empty]
+        raise DataLossError(", ".join(named), "the new download holds no rows")
     written = write_silver(batch.silver, roots, expected=batch.expected, max_row_loss=max_row_loss)
     bronze.record(batch.source, batch.downloads, bronze_root)
     return written

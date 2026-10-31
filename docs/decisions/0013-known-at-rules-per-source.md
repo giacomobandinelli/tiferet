@@ -93,11 +93,12 @@ Raw files must be ingested without exposing the holdout, and agents must not dow
 
 - Each run is a full refresh: every download holds the whole history of its series, and the writer replaces both partition files of every series.
 - Before any file is written, a data-loss guard compares each series with its stored files in both partitions. It refuses the whole run, keeping every file, when a series:
-  - comes back empty;
+  - comes back empty (every such series is named, with "all values missing" when the source column held only missing-value markers);
   - loses any stored observation date;
   - has fewer rows than stored by more than `silver.max_row_loss_fraction` (0.1%).
 
   Revised values are allowed.
+- `--smoke` lists every configured series, including those with no rows, as `0 rows`, or `0 rows (all values missing)` when every value was a missing-value marker, and continues; `--ingest` refuses the run.
 - Parsers check the structure they expect and raise a format error that names the source and the missing element: column names, section titles, the Shiller header cells, the SDMX dimensions, FRED's count and paging. A format error writes nothing.
 - The bronze manifest is appended only after the silver files are written. It records the source, the URL with keys redacted, the retrieval time, the SHA-256 and the size of every downloaded file.
 - Raw files are not kept: every file here can be downloaded again. The French and Shiller files recompute their history, though, so their past versions are lost. The manifest hashes show when a file changed.
