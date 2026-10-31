@@ -151,6 +151,26 @@ def _has_columns(table: Table, file: FrenchFile) -> bool:
     return {column_key(c) for c in file.columns} <= keys
 
 
+def _no_factor_table(sized: list[Table], file: FrenchFile) -> str:
+    """Why no table of the file's date width holds every configured column."""
+    wanted = {column_key(c) for c in file.columns}
+    headed = [t for t in sized if t.columns is not None]
+    for table in headed:
+        assert table.columns is not None
+        present = {column_key(c) for c in table.columns}
+        if present & wanted:
+            lacking = [c for c in file.columns if column_key(c) not in present]
+            return (
+                f"the {file.frequency} table lacks configured columns {lacking}; "
+                f"its header is {', '.join(table.columns)}"
+            )
+    unlabelled = len(sized) - len(headed)
+    return (
+        f"no table with {file.frequency} dates and columns {list(file.columns)}; "
+        f"{unlabelled} tables of that date width have no header line"
+    )
+
+
 def select(found: list[Table], file: FrenchFile) -> Table:
     """The configured table.
 
@@ -165,12 +185,7 @@ def select(found: list[Table], file: FrenchFile) -> Table:
     if file.section is None:
         matches = [t for t in sized if _has_columns(t, file)]
         if not matches:
-            unlabelled = sum(t.columns is None for t in sized)
-            raise SourceFormatError(
-                SOURCE,
-                f"{file.file}: no table with {file.frequency} dates and columns "
-                f"{list(file.columns)}; {unlabelled} tables of that date width have no header line",
-            )
+            raise SourceFormatError(SOURCE, f"{file.file}: {_no_factor_table(sized, file)}")
         table = matches[0]
     else:
         wanted = title_key(file.section)
