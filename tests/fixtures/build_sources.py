@@ -4,23 +4,26 @@ Run from the repository root with `uv run python tests/fixtures/build_sources.py
 is synthetic and every date is before 2023. The text fixtures (FRED and ECB JSON, the Kenneth
 French factor CSVs, the Shiller page) are written by hand; this script zips the CSVs as the
 library does, writes the portfolio CSVs (49 industries and size deciles, monthly and daily,
-with the library's title and column wording), and writes `ie_data.xls` in the layout of
-Shiller's file. The helpers are also used by the tests to build variants with a renamed
-column or a missing section.
+with the library's title and column wording), writes `ie_data.xls` in the layout of
+Shiller's file, and writes the SPDR `navhist.xlsx` in a synthetic layout. The iShares
+SpreadsheetML files and product pages are written by hand. The helpers are also used by
+the tests to build variants with a renamed column or a missing section.
 """
 
 import io
 import zipfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import xlwt  # type: ignore[import-untyped]
 
 from tiferet.data.source_config import load_sources
 
 SOURCES = Path(__file__).resolve().parent / "sources"
-FRENCH, SHILLER = SOURCES / "french", SOURCES / "shiller"
+FRENCH, SHILLER, SPDR = SOURCES / "french", SOURCES / "shiller", SOURCES / "spdr"
 ZIP_TIME = (2022, 12, 1, 0, 0, 0)
+ZIP_CREATE_SYSTEM = 3
 
 FRENCH_ZIPS = {
     "F-F_Research_Data_Factors_CSV.zip": ("factors_monthly.csv", "F-F_Research_Data_Factors.CSV"),
@@ -83,12 +86,25 @@ SHILLER_ROWS: tuple[ShillerRow, ...] = (
 )
 
 
-def zip_csv(text: str, member: str) -> bytes:
-    """A deterministic zip holding `text` as its one member."""
+def deterministic_zip(members: Mapping[str, bytes]) -> bytes:
+    """A zip of `members`, identical on every operating system and Python build.
+
+    Members are written sorted by name with a fixed timestamp. `ZipInfo.create_system` is
+    fixed to Unix (3): by default `zipfile` records the creating system, which is 0 on
+    Windows and 3 elsewhere, so the same members would give different bytes.
+    """
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr(zipfile.ZipInfo(member, ZIP_TIME), text.encode("latin-1"))
+        for name in sorted(members):
+            info = zipfile.ZipInfo(name, ZIP_TIME)
+            info.create_system = ZIP_CREATE_SYSTEM
+            archive.writestr(info, members[name])
     return buffer.getvalue()
+
+
+def zip_csv(text: str, member: str) -> bytes:
+    """A deterministic zip holding `text` as its one member."""
+    return deterministic_zip({member: text.encode("latin-1")})
 
 
 def _section(title: str, columns: Sequence[str], dates: Sequence[str], seed: int) -> list[str]:
@@ -181,6 +197,114 @@ def shiller_xls(
     return buffer.getvalue()
 
 
+XlsxCell = str | float | None
+
+SPDR_HEADER = ("Date", "NAV", "Shares Outstanding", "Total Net Assets")
+SPDR_ROWS: tuple[tuple[XlsxCell, ...], ...] = (
+    ("30-Dec-2022", 61.84, 1200000.0, 74208000.0),
+    ("29-Dec-2022", 61.27, 1200000.0, 73524000.0),
+    ("23-Dec-2022", "60.95", 1180000.0, 71921000.0),
+    ("14-Apr-2022", 58.02, 1100000.0, 63822000.0),
+)
+
+
+def _column(index: int) -> str:
+    name = ""
+    index += 1
+    while index:
+        index, rest = divmod(index - 1, 26)
+        name = chr(65 + rest) + name
+    return name
+
+
+def _sheet_xml(rows: Sequence[Sequence[XlsxCell]]) -> str:
+    body = []
+    for r, row in enumerate(rows, start=1):
+        cells = []
+        for c, value in enumerate(row):
+            ref = f"{_column(c)}{r}"
+            if isinstance(value, str):
+                text = escape(value)
+                cells.append(f'<c r="{ref}" t="inlineStr"><is><t>{text}</t></is></c>')
+            elif value is not None:
+                cells.append(f'<c r="{ref}"><v>{value!r}</v></c>')
+        body.append(f'<row r="{r}">{"".join(cells)}</row>')
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f"<sheetData>{''.join(body)}</sheetData></worksheet>"
+    )
+
+
+def xlsx(sheets: dict[str, Sequence[Sequence[XlsxCell]]]) -> bytes:
+    """A minimal deterministic xlsx workbook with inline strings and numbers."""
+    main_ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    rel_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    pkg_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+    sheet_type = f"{rel_ns}/worksheet"
+    names = list(sheets)
+    parts = {
+        "[Content_Types].xml": (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" '
+            'ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/xl/workbook.xml" ContentType="application/'
+            'vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            + "".join(
+                f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/'
+                'vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+                for i in range(1, len(names) + 1)
+            )
+            + "</Types>"
+        ),
+        "_rels/.rels": (
+            f'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{pkg_ns}">'
+            f'<Relationship Id="rId1" Type="{rel_ns}/officeDocument" Target="xl/workbook.xml"/>'
+            "</Relationships>"
+        ),
+        "xl/workbook.xml": (
+            f'<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="{main_ns}" '
+            f'xmlns:r="{rel_ns}"><sheets>'
+            + "".join(
+                f'<sheet name="{escape(name)}" sheetId="{i}" r:id="rId{i}"/>'
+                for i, name in enumerate(names, start=1)
+            )
+            + "</sheets></workbook>"
+        ),
+        "xl/_rels/workbook.xml.rels": (
+            f'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{pkg_ns}">'
+            + "".join(
+                f'<Relationship Id="rId{i}" Type="{sheet_type}" Target="worksheets/sheet{i}.xml"/>'
+                for i in range(1, len(names) + 1)
+            )
+            + "</Relationships>"
+        ),
+    }
+    for i, name in enumerate(names, start=1):
+        parts[f"xl/worksheets/sheet{i}.xml"] = _sheet_xml(sheets[name])
+    return deterministic_zip({path: text.encode("utf-8") for path, text in parts.items()})
+
+
+def spdr_xlsx(
+    header: Sequence[str] = SPDR_HEADER, rows: Sequence[Sequence[XlsxCell]] = SPDR_ROWS
+) -> bytes:
+    """A NAV history workbook in a synthetic layout: title rows, a header, daily rows newest
+    first, and a closing note."""
+    sheet: list[Sequence[XlsxCell]] = [
+        ("SPDR synthetic fixture fund",),
+        (),
+        ("Fund Name:", "Synthetic Energy Fixture"),
+        (),
+        tuple(header),
+        *rows,
+        (),
+        ("Past performance is not a reliable indicator of future performance.",),
+    ]
+    return xlsx({"Notes": [("Synthetic fixture",)], "NAV History": sheet})
+
+
 def main() -> None:
     ind49 = next(f for f in load_sources().french.files if f.dataset == "ind49")
     (FRENCH / "ind49_monthly.csv").write_text(ind49_csv(ind49.columns), encoding="latin-1")
@@ -193,6 +317,8 @@ def main() -> None:
         text = (FRENCH / source).read_text(encoding="latin-1")
         (FRENCH / archive).write_bytes(zip_csv(text, member))
     (SHILLER / "ie_data.xls").write_bytes(shiller_xls())
+    SPDR.mkdir(exist_ok=True)
+    (SPDR / "navhist.xlsx").write_bytes(spdr_xlsx())
 
 
 if __name__ == "__main__":

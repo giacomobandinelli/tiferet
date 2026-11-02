@@ -78,6 +78,11 @@ def test_initial_fred_list() -> None:
         "NASDAQ100",
         "DCOILWTICO",
         "BAA10Y",
+        "VIXCLS",
+        "VXVCLS",
+        "OVXCLS",
+        "GVZCLS",
+        "VXEEMCLS",
     }
 
 
@@ -181,3 +186,29 @@ def test_french_columns_must_have_distinct_known_headers(columns: list[str]) -> 
     raw = edited(("french", "files", 4, "columns"), columns)
     with pytest.raises(ValidationError, match="known header form and distinct"):
         Sources.model_validate(raw)
+
+
+def test_nav_series_ids_are_derived_from_the_holdings_and_tickers() -> None:
+    ids = load_sources().series_ids()
+    assert "ishares_nasdaq100_nav" in ids
+    assert {"ishares_us_iwm_nav", "ishares_us_iwm_dist", "spdr_us_energy_nav"} <= set(ids)
+
+
+def test_nav_holdings_exist_in_the_holdings_file() -> None:
+    from tiferet.config import load_holdings
+
+    keys = load_holdings().keys
+    config = load_sources()
+    assert {f.holding for f in config.ishares.ucits.funds} <= keys
+    assert {f.holding for f in config.spdr.funds} <= keys
+
+
+def test_the_spdr_layout_needs_its_columns_in_the_header() -> None:
+    from pydantic import ValidationError
+
+    from tiferet.data.source_config import SpdrLayout
+
+    with pytest.raises(ValidationError, match="must be in the header"):
+        SpdrLayout(sheet="S", header=("A", "B"), date_column="A", nav_column="C", date_format="%Y")
+    with pytest.raises(ValidationError, match="distinct"):
+        SpdrLayout(sheet="S", header=("A", "A"), date_column="A", nav_column="A", date_format="%Y")

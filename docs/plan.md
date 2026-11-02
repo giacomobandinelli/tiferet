@@ -38,7 +38,7 @@ Individual signals, sleeves or holdings carry no requirement of their own; only 
 | Risk and scorecard | Measures the portfolio against the benchmark and reference strategies |
 | Research ledger | Records every backtest ever run, for overfitting control |
 | AI agents (Claude Code) | Build, test, propose and optimize strategies, and review each other's work |
-| Outputs | Website, automated monthly Excel workbook and PowerPoint report, data downloads |
+| Outputs | Website, automated monthly Excel workbook and PowerPoint report, downloads of derived results (never raw third-party data, decision 0016) |
 
 ---
 
@@ -271,11 +271,11 @@ When many strategies are tested on the same history, some look good by chance: t
 
 ### 5.1 Sources
 
-All sources are free. Licences and download limits are checked when each adapter is built; raw data is never republished, only derived results. Source choices and their terms are recorded in decision 0014, and the `known_at` rule of each source in decision 0013.
+All sources are free. Licences and download limits are checked when each adapter is built. Most free market data is licensed for personal or internal use only, so raw third-party data is never published, committed, exported or offered for download; only aggregate results computed from it are published, each with its source attribution (decision 0016). Source choices and their terms are recorded in decision 0014, and the `known_at` rule of each source in decision 0013.
 
 | Domain | Sources | Used for |
 | --- | --- | --- |
-| Equities and ETFs (Europe, US) | Issuer NAV files for UCITS and US-listed ETFs; Kenneth French data library for factor, industry and size portfolio returns | Holding returns, proxies, sector and divergence signals |
+| Equities and ETFs (Europe, US) | Issuer NAV files: the iShares fund data file of each iShares UCITS holding and of US-listed iShares signal ETFs, and the SPDR NAV history file of the US Energy holding; Kenneth French data library for factor, industry and size portfolio returns | Holding returns, proxies, sector and divergence signals |
 | ETF quotes and fees | Exchange data, issuer factsheets, quote snapshots | Spread validation, TERs |
 | ETF holdings | Daily holdings files from iShares, Xtrackers, Amundi, SPDR | Look-through risk |
 | Fundamentals | SEC EDGAR XBRL company facts | Valuation signals such as earnings yield against bond yields |
@@ -283,12 +283,14 @@ All sources are free. Licences and download limits are checked when each adapter
 | Long histories | Shiller data (S&P 500 since 1871), Kenneth French data library (since 1926) | Benchmark history, dynamic ladder |
 | Commodities | World Bank Pink Sheet, FRED (WTI), ETC issuer NAV files | Commodity holdings and signals |
 | Crypto | CoinGecko and Coin Metrics community data: daily price, volume, market capitalization; stablecoin market caps | Crypto holdings, BTC dominance ex-stablecoins, crypto signals |
-| Volatility | Cboe VIX history | Stress signals |
+| Volatility | Cboe indices through FRED: VIX, 3-month VIX, oil, gold and emerging-markets volatility (Cboe-copyrighted, decision 0016) | Stress signals |
 | Instrument master | OpenFIGI, ISIN and ticker lists | Linking each UCITS ETF to its index, proxy and tax class |
 
 Stooq is not used: its downloads require an API key since March 2026 and its terms forbid redistribution without consent. Yahoo Finance is not used: its terms allow personal use only (decision 0014).
 
-**Open gaps.** No free source has been chosen yet for daily gold, silver and copper prices, daily emerging-market equity prices, or the daily BTP-Bund spread.
+**Open gaps.** No free source has been chosen yet for daily gold, silver and copper prices, daily emerging-market equity prices, or the daily BTP-Bund spread. Vanguard publishes no downloadable NAV file for the EUR Eurozone Government Bond holding: its price export is built in the browser from an internal interface, so that holding has no source yet.
+
+**EUR overnight holding.** The Xtrackers II EUR Overnight Rate Swap UCITS ETF has no adapter. It tracks the Solactive €STR +8.5 Daily Total Return Index and its download requires accepting a gate, so its return is modelled as €STR (ECB adapter) plus 8.5 basis points a year minus the TER (decision 0014).
 
 **BTC dominance ex-stablecoins** needs complete histories of total crypto market capitalization and of stablecoin market capitalization. Sources, in order of preference:
 
@@ -336,6 +338,8 @@ dbt tests on every model (unique keys, no gaps, no negative prices, freshness), 
 
 **Pages:** Terminal (landing), Scorecard, Signals and regimes, Portfolio and weights, Costs and taxes, Risk, Research log (trial ledger and rejected strategies), Data (warehouse, tests, lineage), Downloads, Methodology.
 
+**Published data.** Pages, charts and the Downloads page show and offer derived results only: portfolio returns, risk metrics, weights and signals, each with its source attribution. No raw third-party series is shown in a table, offered for download or queryable (decision 0016).
+
 **Visuals.** Every visual shows real data and states what it represents.
 
 | Visual | What it shows |
@@ -346,7 +350,7 @@ dbt tests on every model (unique keys, no gaps, no negative prices, freshness), 
 | Correlation field | Rolling correlations, showing assets moving into phase during crises |
 | Optimization landscape | The robustness surface over two parameters: a wide plateau means robust, a lone spike means overfit |
 | Trial cloud | Every backtest in the ledger as one particle, placed by return and downside deviation, with the chosen strategy and the benchmark highlighted |
-| SQL console | Visitors query a sample of the gold tables in the browser (DuckDB-WASM) |
+| SQL console | Visitors query the published derived-result tables in the browser (DuckDB-WASM); raw source series are not included (decision 0016) |
 
 **Design direction.** Minimal and modern, near-black with a light mode for reading pages. References:
 
@@ -368,13 +372,13 @@ At most one accent colour, used only to carry meaning (for example the regime st
 3. **Motion.** Animations follow interface-motion principles in the style of Emil Kowalski's work (short durations, natural easing, purposeful transitions, respect for reduced-motion settings).
 4. **Verification.** The `preship-qa` workflow opens every page in a browser at 390 px and 1440 px, checks loading, empty, error and data states, and records before-and-after screenshots.
 
-**Attribution.** Every page and export that uses FRED data carries the sentence "This product uses the FRED® API but is not endorsed or certified by the Federal Reserve Bank of St. Louis." Results built on ECB statistics cite "Source: ECB statistics" and state the calculations derived from them; results built on the Kenneth French data library and Shiller's data cite them (decision 0014).
+**Attribution.** Every page and export that uses FRED data carries the sentence "This product uses the FRED® API but is not endorsed or certified by the Federal Reserve Bank of St. Louis." Results built on ECB statistics cite "Source: ECB statistics" and state the calculations derived from them; results built on the Kenneth French data library and Shiller's data cite them (decision 0014). Results built on issuer NAVs name the issuers, and results built on the Cboe indices name Cboe (decision 0016).
 
 **Footer.** A compact integrity strip at the end of every page: rows in the warehouse, data tests passing in the latest run, live record against the benchmark, trials in the ledger, and a link to the latest referee report.
 
 ### 7.2 Automated reports
 
-Both are generated by the pipeline after each monthly rebalance, with no manual steps, and published on the Downloads page.
+Both are generated by the pipeline after each monthly rebalance, with no manual steps, and published on the Downloads page. They contain derived results only, never raw third-party data (decision 0016).
 
 | Output | Content |
 | --- | --- |

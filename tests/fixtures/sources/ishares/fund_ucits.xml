@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<ss:Workbook xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:html="http://www.w3.org/TR/REC-html40">
+<ss:Worksheet ss:Name="Fund Header">
+<ss:Table>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Synthetic fixture fund</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Stand</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">30.Dez.2022</ss:Data></ss:Cell></ss:Row>
+</ss:Table>
+</ss:Worksheet>
+<ss:Worksheet ss:Name="Key Facts">
+<ss:Table>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Fondsname</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">Synthetic fixture fund</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Fondswährung</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">CURRENCY</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Währung der Reihe</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">CURRENCY</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Gesamtkostenquote</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">0,07%</ss:Data></ss:Cell></ss:Row>
+</ss:Table>
+</ss:Worksheet>
+<ss:Worksheet ss:Name="Historical NAVs">
+<ss:Table>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Historische NAVs</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">30.Dez.2022</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">412,15</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">29.Dez.2022</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">410,02</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">23.Dez.2022</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="Number">405.77</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">14.Apr.2022</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">430,10</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">26.Okt.2021</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">399,64</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">01.März 2018</ss:Data></ss:Cell><ss:Cell ss:Index="2"><ss:Data ss:Type="String">1.012,40</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">18.Juli2017</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">250,08</ss:Data></ss:Cell></ss:Row>
+<ss:Row ss:Index="10"><ss:Cell ss:MergeAcross="1"><ss:Data ss:Type="String">Die Wertentwicklung in der Vergangenheit ist kein verlässlicher Indikator für künftige Ergebnisse.</ss:Data></ss:Cell></ss:Row>
+</ss:Table>
+</ss:Worksheet>
+<ss:Worksheet ss:Name="Holdings">
+<ss:Table>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Emittententicker</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">Name</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">FIX</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">Fixture holding</ss:Data></ss:Cell></ss:Row>
+</ss:Table>
+</ss:Worksheet>
+</ss:Workbook>

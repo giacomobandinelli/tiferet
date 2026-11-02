@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-02
+- Corrected: 2026-11-02 (the Licence reason; see 0016)
 
 ## Context
 
@@ -14,7 +15,7 @@ The holding is iShares Diversified Commodity Swap UCITS ETF (Acc), IE00BDFL4P12.
 Reasons:
 
 - **Same index exposure.** The previous holding tracked the same index, the Bloomberg Commodity Index Total Return. Roles, signals and the pre-launch proxy history are unchanged.
-- **Licence.** WisdomTree's terms of use limit site content to "personal, non-commercial use" and forbid using it "for public or commercial purposes, without WisdomTree's written permission" (https://www.wisdomtree.com/corporate/terms). Its NAV history therefore cannot feed the public pipeline.
+- **Licence.** Both issuers restrict use of their data. WisdomTree's terms of use limit site content to "personal, non-commercial use" and forbid using it "for public or commercial purposes, without WisdomTree's written permission" (https://www.wisdomtree.com/corporate/terms). iShares' German terms of use (https://www.ishares.com/de/privatanleger/de/nutzungsbedingungen) state that the site is "nur für Ihren persönlichen und internen Gebrauch bestimmt", not for "kommerziellen Zwecken (mit oder ohne Gewinnerzielungsabsicht)", and that users may not "Sekundärwerke … publizieren"; the disclaimer of the iShares US fund data file permits use "solely for your personal, non-commercial use". The licence is therefore not a reason for the switch. The switch rests on the same index, the larger fund and longer record, a fund data file that downloads without a gate, and one issuer fewer. How data from either issuer may be used is set by decision 0016.
 - **Data source.** iShares publishes a daily NAV history in the same fund data file as the other fund facts. The issuer-NAV adapter planned in 0014 can use it, and it also covers six other holdings.
 - **Size and record.** The fund held about USD 2.45 billion of share-class assets on 2026-10-26 and launched in 2017, against 2021 for the previous holding.
 - **Structure.** The index return is delivered through total return swaps, with collateral held under UCITS rules. Counterparty risk remains and is noted here; the collateral rules limit it.
