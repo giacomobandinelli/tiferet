@@ -12,7 +12,7 @@ the tests to build variants with a renamed column or a missing section.
 
 import io
 import zipfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -23,6 +23,7 @@ from tiferet.data.source_config import load_sources
 SOURCES = Path(__file__).resolve().parent / "sources"
 FRENCH, SHILLER, SPDR = SOURCES / "french", SOURCES / "shiller", SOURCES / "spdr"
 ZIP_TIME = (2022, 12, 1, 0, 0, 0)
+ZIP_CREATE_SYSTEM = 3
 
 FRENCH_ZIPS = {
     "F-F_Research_Data_Factors_CSV.zip": ("factors_monthly.csv", "F-F_Research_Data_Factors.CSV"),
@@ -85,12 +86,25 @@ SHILLER_ROWS: tuple[ShillerRow, ...] = (
 )
 
 
-def zip_csv(text: str, member: str) -> bytes:
-    """A deterministic zip holding `text` as its one member."""
+def deterministic_zip(members: Mapping[str, bytes]) -> bytes:
+    """A zip of `members`, identical on every operating system and Python build.
+
+    Members are written sorted by name with a fixed timestamp. `ZipInfo.create_system` is
+    fixed to Unix (3): by default `zipfile` records the creating system, which is 0 on
+    Windows and 3 elsewhere, so the same members would give different bytes.
+    """
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr(zipfile.ZipInfo(member, ZIP_TIME), text.encode("latin-1"))
+        for name in sorted(members):
+            info = zipfile.ZipInfo(name, ZIP_TIME)
+            info.create_system = ZIP_CREATE_SYSTEM
+            archive.writestr(info, members[name])
     return buffer.getvalue()
+
+
+def zip_csv(text: str, member: str) -> bytes:
+    """A deterministic zip holding `text` as its one member."""
+    return deterministic_zip({member: text.encode("latin-1")})
 
 
 def _section(title: str, columns: Sequence[str], dates: Sequence[str], seed: int) -> list[str]:
@@ -270,11 +284,7 @@ def xlsx(sheets: dict[str, Sequence[Sequence[XlsxCell]]]) -> bytes:
     }
     for i, name in enumerate(names, start=1):
         parts[f"xl/worksheets/sheet{i}.xml"] = _sheet_xml(sheets[name])
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for path, text in parts.items():
-            archive.writestr(zipfile.ZipInfo(path, ZIP_TIME), text.encode("utf-8"))
-    return buffer.getvalue()
+    return deterministic_zip({path: text.encode("utf-8") for path, text in parts.items()})
 
 
 def spdr_xlsx(

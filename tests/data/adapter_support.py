@@ -1,5 +1,7 @@
 """Fakes and checks shared by the adapter tests."""
 
+import io
+import zipfile
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -30,6 +32,29 @@ class FakeFetcher:
         query = dict(params or {})
         self.calls.append((url, query))
         return Download(redact(build_url(url, query)), self._responder(url, query), RETRIEVED_AT)
+
+
+def text_fixture(*parts: str) -> str:
+    """A UTF-8 text fixture with LF line endings, whatever the checkout converted."""
+    return fixture(*parts).decode("utf-8").replace("\r\n", "\n")
+
+
+def archive_members(content: bytes) -> dict[str, bytes]:
+    """The members of a zip or xlsx archive by name."""
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        return {name: archive.read(name) for name in sorted(archive.namelist())}
+
+
+def assert_same_archive(committed: bytes, rebuilt: bytes) -> None:
+    """Both archives hold the same member names and contents.
+
+    Raw archive bytes are not compared: they carry metadata (the creating operating system,
+    timestamps, compression) that is not part of the fixture.
+    """
+    a, b = archive_members(committed), archive_members(rebuilt)
+    assert list(a) == list(b)
+    for name in a:
+        assert a[name] == b[name], name
 
 
 def fixture(*parts: str) -> bytes:

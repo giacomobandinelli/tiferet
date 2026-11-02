@@ -9,11 +9,11 @@ import pytest
 from data.adapter_support import (
     FakeFetcher,
     assert_partitioned,
-    fixture,
     known_at,
     production_view,
     research_view,
     silver_roots,
+    text_fixture,
     utc,
 )
 from tiferet.config import load_holdings
@@ -26,8 +26,8 @@ from tiferet.data.store import HOLDOUT_START
 
 US_PAGE = "https://www.ishares.com/us/products/239710/ishares-russell-2000-etf"
 US_PORTFOLIO = "239710"
-UCITS_XML = fixture("ishares", "fund_ucits.xml").decode("utf-8")
-US_XML = fixture("ishares", "fund_us.xml").decode("utf-8")
+UCITS_XML = text_fixture("ishares", "fund_ucits.xml")
+US_XML = text_fixture("ishares", "fund_us.xml")
 UCITS_NAVS = ("412,15", "410,02", "405.77", "430,10", "399,64", "1.012,40", "250,08")
 US_VALUES = ("174.38", "175.06", "178.12", "180.11", "165.32", "198.54", "0.62", "0.47")
 DATES = ("Dez.2022", "Apr.2022", "Okt.2021", "März 2018", "Juli2017", ", 2022", "2022-09-26")
@@ -60,8 +60,8 @@ def responder(
                 return us_xml.encode("utf-8")
             return ucits_xml.replace("CURRENCY", currency[pid]).encode("utf-8")
         if url == US_PAGE:
-            return fixture("ishares", "page_us.html")
-        text = page or fixture("ishares", "page_ucits.html").decode("utf-8")
+            return text_fixture("ishares", "page_us.html").encode("utf-8")
+        text = page or text_fixture("ishares", "page_ucits.html")
         return text.replace("PORTFOLIO", portfolio_id(url)).encode("utf-8")
 
     return FakeFetcher(respond)
@@ -273,7 +273,7 @@ LINK = (
     "&amp;appSubType=fixture&amp;targetSite=de&amp;locale=de_DE&amp;portfolioId=PORTFOLIO"
     '&amp;component=fundData&amp;userType=individual">Daten herunterladen</a>'
 )
-PAGE = fixture("ishares", "page_ucits.html").decode("utf-8")
+PAGE = text_fixture("ishares", "page_ucits.html")
 
 
 @pytest.mark.parametrize(

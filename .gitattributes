@@ -1,1 +1,4 @@
 * text=auto
+
+# Fixtures are byte-exact: tests replace multi-line text and compare archives.
+tests/fixtures/** -text

@@ -1,5 +1,7 @@
 """Tests for the SPDR NAV history adapter on a synthetic workbook (decisions 0013, 0016)."""
 
+import io
+import zipfile
 from pathlib import Path
 
 import pandas as pd
@@ -8,6 +10,7 @@ import pytest
 from data.adapter_support import (
     FakeFetcher,
     assert_partitioned,
+    assert_same_archive,
     fixture,
     known_at,
     production_view,
@@ -15,7 +18,13 @@ from data.adapter_support import (
     silver_roots,
     utc,
 )
-from fixtures.build_sources import SPDR_HEADER, SPDR_ROWS, spdr_xlsx
+from fixtures.build_sources import (
+    SPDR_HEADER,
+    SPDR_ROWS,
+    ZIP_CREATE_SYSTEM,
+    ZIP_TIME,
+    spdr_xlsx,
+)
 from tiferet.data import nav_spdr
 from tiferet.data.adapter import Batch, ingest, smoke_lines
 from tiferet.data.cli import main
@@ -51,7 +60,15 @@ def collect(content: bytes | None = None, layout: SpdrLayout | None = LAYOUT) ->
 
 
 def test_the_committed_fixture_matches_the_builder() -> None:
-    assert fixture("spdr", "navhist.xlsx") == spdr_xlsx()
+    assert_same_archive(fixture("spdr", "navhist.xlsx"), spdr_xlsx())
+
+
+def test_the_builder_writes_the_same_archive_metadata_on_every_system() -> None:
+    with zipfile.ZipFile(io.BytesIO(spdr_xlsx())) as archive:
+        infos = archive.infolist()
+    assert [i.filename for i in infos] == sorted(i.filename for i in infos)
+    assert {i.create_system for i in infos} == {ZIP_CREATE_SYSTEM}
+    assert {i.date_time for i in infos} == {ZIP_TIME}
 
 
 def test_an_unconfigured_layout_stops_with_a_clear_error() -> None:
