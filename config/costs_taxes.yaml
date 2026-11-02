@@ -60,10 +60,10 @@ ter:
   broad_commodities:
     value: 0.0019
     unit: fraction_per_year
-    source_url: https://live.deutsche-boerse.com/etf/wisdomtree-broad-commodities-ucits-etf-usd-acc
-    checked_on: 2026-10-25
-    verified: false
-    reason: Issuer site blocks automated access (Cloudflare); read on the Deutsche Börse listing page.
+    source_url: https://www.ishares.com/de/privatanleger/de/produkte/287254/
+    checked_on: 2026-10-27
+    verified: true
+    note: TER per the issuer's Key Facts sheet
   eur_inflation_linked:
     value: 0.0009
     unit: fraction_per_year
