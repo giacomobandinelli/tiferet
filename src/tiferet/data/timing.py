@@ -7,6 +7,7 @@ a lag, at a local time of day.
 
 from datetime import date, time, timedelta
 from enum import StrEnum
+from functools import cache
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -115,5 +116,98 @@ def add_target_days(day: date, count: int) -> date:
 def shift_target_days(days: pd.Series, count: int) -> pd.Series:
     """Each day moved `count` TARGET business days later, as a naive midnight."""
     unique = {d: add_target_days(d, count) for d in days.dt.date.unique()}
+    shifted: pd.Series = pd.to_datetime(days.dt.date.map(unique)).astype(days.dtype)
+    return shifted
+
+
+US_SPECIAL_CLOSINGS = frozenset(
+    {
+        date(1985, 9, 27),
+        date(1994, 4, 27),
+        date(2001, 9, 11),
+        date(2001, 9, 12),
+        date(2001, 9, 13),
+        date(2001, 9, 14),
+        date(2004, 6, 11),
+        date(2007, 1, 2),
+        date(2012, 10, 29),
+        date(2012, 10, 30),
+        date(2018, 12, 5),
+        date(2025, 1, 9),
+    }
+)
+"""Unscheduled weekday closings of the New York Stock Exchange since 1985: storms, the
+September 2001 attacks and national days of mourning."""
+
+
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
+    """The `n`-th `weekday` (Monday 0) of the month; the last one when `n` is -1."""
+    if n > 0:
+        first = date(year, month, 1)
+        return first + timedelta(days=(weekday - first.weekday()) % 7 + 7 * (n - 1))
+    following = date(year + month // 12, month % 12 + 1, 1)
+    last = following - timedelta(days=1)
+    return last - timedelta(days=(last.weekday() - weekday) % 7)
+
+
+def _observed(day: date) -> date:
+    """A Saturday holiday is observed on the Friday before, a Sunday one on the Monday after."""
+    if day.weekday() == 5:
+        return day - timedelta(days=1)
+    if day.weekday() == 6:
+        return day + timedelta(days=1)
+    return day
+
+
+def _us_holidays(year: int) -> set[date]:
+    fixed = [date(year, 1, 1), date(year, 6, 19), date(year, 7, 4)]
+    fixed += [date(year, 11, 11), date(year, 12, 25)]
+    return {
+        *fixed,
+        *(_observed(d) for d in fixed),
+        _nth_weekday(year, 1, 0, 3),
+        _nth_weekday(year, 2, 0, 3),
+        _nth_weekday(year, 5, 0, -1),
+        _nth_weekday(year, 9, 0, 1),
+        _nth_weekday(year, 10, 0, 2),
+        _nth_weekday(year, 11, 3, 4),
+        easter_sunday(year) - timedelta(days=2),
+    }
+
+
+@cache
+def us_closing_days(year: int) -> frozenset[date]:
+    """Weekdays in `year` treated as closed for US-listed funds.
+
+    The US federal holidays (Juneteenth and Martin Luther King Day in every year) on their
+    date and their observed date, Good Friday, and the special closings of the New York Stock
+    Exchange. The federal holidays that the exchange keeps open, and the years before a
+    holiday existed, are treated as closed too: a day wrongly treated as closed only delays a
+    `known_at`.
+    """
+    days = _us_holidays(year - 1) | _us_holidays(year) | _us_holidays(year + 1)
+    days |= US_SPECIAL_CLOSINGS
+    return frozenset(d for d in days if d.year == year and d.weekday() < 5)
+
+
+def is_us_day(day: date) -> bool:
+    return day.weekday() < 5 and day not in us_closing_days(day.year)
+
+
+def add_us_days(day: date, count: int) -> date:
+    """The `count`-th US business day after `day`; `day` itself when `count` is 0."""
+    if count < 0:
+        raise ValueError(f"count cannot be negative, got {count}")
+    current = day
+    for _ in range(count):
+        current += timedelta(days=1)
+        while not is_us_day(current):
+            current += timedelta(days=1)
+    return current
+
+
+def shift_us_days(days: pd.Series, count: int) -> pd.Series:
+    """Each day moved `count` US business days later, as a naive midnight."""
+    unique = {d: add_us_days(d, count) for d in days.dt.date.unique()}
     shifted: pd.Series = pd.to_datetime(days.dt.date.map(unique)).astype(days.dtype)
     return shifted

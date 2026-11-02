@@ -171,6 +171,83 @@ fred:
           Moody's publication time for its daily Baa yield is not documented on a page that
           could be read without displaying current values. 7 days is a conservative margin
           over the 10-year yield's H.15 lag of 4 days.
+    # Cboe volatility indices. FRED marks them as copyrighted by Cboe: they are used for
+    # derived signals only and their raw values are never published (decision 0016).
+    - series_id: fred_vixcls
+      fred_id: VIXCLS
+      frequency: daily
+      units: index_points
+      publication_lag_days:
+        value: 1
+        unit: days_after_period_end
+        source_url: https://www.cboe.com/us/indices/
+        checked_on: 2026-11-02
+        verified: false
+        reason: >-
+          Cboe (VIX, 30-day). The pages that state when Cboe computes and disseminates its
+          index closes also display current values, so they were not read (CLAUDE.md
+          invariant 7). The closes are taken to follow the US session, by 16:15 New York time; one
+          day of margin is added, as for the Nasdaq indices.
+    - series_id: fred_vxvcls
+      fred_id: VXVCLS
+      frequency: daily
+      units: index_points
+      publication_lag_days:
+        value: 1
+        unit: days_after_period_end
+        source_url: https://www.cboe.com/us/indices/
+        checked_on: 2026-11-02
+        verified: false
+        reason: >-
+          Cboe (3-month VIX). The pages that state when Cboe computes and disseminates its
+          index closes also display current values, so they were not read (CLAUDE.md
+          invariant 7). The closes are taken to follow the US session, by 16:15 New York time; one
+          day of margin is added, as for the Nasdaq indices.
+    - series_id: fred_ovxcls
+      fred_id: OVXCLS
+      frequency: daily
+      units: index_points
+      publication_lag_days:
+        value: 1
+        unit: days_after_period_end
+        source_url: https://www.cboe.com/us/indices/
+        checked_on: 2026-11-02
+        verified: false
+        reason: >-
+          Cboe (oil volatility). The pages that state when Cboe computes and disseminates its
+          index closes also display current values, so they were not read (CLAUDE.md
+          invariant 7). The closes are taken to follow the US session, by 16:15 New York time; one
+          day of margin is added, as for the Nasdaq indices.
+    - series_id: fred_gvzcls
+      fred_id: GVZCLS
+      frequency: daily
+      units: index_points
+      publication_lag_days:
+        value: 1
+        unit: days_after_period_end
+        source_url: https://www.cboe.com/us/indices/
+        checked_on: 2026-11-02
+        verified: false
+        reason: >-
+          Cboe (gold volatility). The pages that state when Cboe computes and disseminates its
+          index closes also display current values, so they were not read (CLAUDE.md
+          invariant 7). The closes are taken to follow the US session, by 16:15 New York time; one
+          day of margin is added, as for the Nasdaq indices.
+    - series_id: fred_vxeemcls
+      fred_id: VXEEMCLS
+      frequency: daily
+      units: index_points
+      publication_lag_days:
+        value: 1
+        unit: days_after_period_end
+        source_url: https://www.cboe.com/us/indices/
+        checked_on: 2026-11-02
+        verified: false
+        reason: >-
+          Cboe (emerging-markets volatility). The pages that state when Cboe computes and disseminates its
+          index closes also display current values, so they were not read (CLAUDE.md
+          invariant 7). The closes are taken to follow the US session, by 16:15 New York time; one
+          day of margin is added, as for the Nasdaq indices.
 
 shiller:
   page_url: https://shillerdata.com/
@@ -409,3 +486,74 @@ ecb:
         - {series_id: ecb_exr_gbp, key: D.GBP.EUR.SP00.A, units: gbp_per_eur}
         - {series_id: ecb_exr_chf, key: D.CHF.EUR.SP00.A, units: chf_per_eur}
         - {series_id: ecb_exr_jpy, key: D.JPY.EUR.SP00.A, units: jpy_per_eur}
+
+# Issuer NAV files (decisions 0013, 0014, 0016). Their terms allow personal or internal use
+# only: raw values are never published, committed or exported. NAVs are stored in the
+# currency of the series and converted to EUR later with ECB reference rates.
+ishares:
+  # The fund data link is found on each product page at run time and never stored.
+  link_path: /product-data/api/v1/get-fund-document
+  link_params: [appType, appSubType, targetSite, locale, portfolioId, component, userType]
+  ucits:
+    publication:
+      value: {business_days_after: 1, time: "12:00"}
+      unit: target_business_days_after_nav_date_and_berlin_time
+      source_url: https://github.com/giacomobandinelli/tiferet/blob/main/docs/decisions/0013-known-at-rules-per-source.md
+      checked_on: 2026-11-02
+      verified: false
+      reason: >-
+        Conservative approximation. A NAV for day t is struck after that day's valuation
+        point and published later; the issuer states no publication time on a page that
+        could be read without displaying current values. Noon in Berlin on the next TARGET
+        business day is taken to follow publication.
+    # SpreadsheetML 2003 fund data file of the German site, as observed by the owner.
+    key_facts_sheet: Key Facts
+    currency_label: Währung der Reihe
+    nav_sheet: Historical NAVs
+    nav_title: Historische NAVs
+    # Product page: the isin source_url of each holding in config/holdings.yaml.
+    funds:
+      - {holding: nasdaq100, currency: USD}
+      - {holding: sp500, currency: USD}
+      - {holding: msci_em_imi, currency: USD}
+      - {holding: broad_commodities, currency: USD}
+      - {holding: eur_inflation_linked, currency: EUR}
+      - {holding: ust_7_10_eur_hedged, currency: EUR}
+      - {holding: usd_tbills_0_1, currency: USD}
+  us:
+    publication:
+      value: {business_days_after: 1, time: "09:00"}
+      unit: us_business_days_after_nav_date_and_new_york_time
+      source_url: https://github.com/giacomobandinelli/tiferet/blob/main/docs/decisions/0013-known-at-rules-per-source.md
+      checked_on: 2026-11-02
+      verified: false
+      reason: >-
+        Conservative approximation. A US fund's NAV for day t is struck at the market close
+        and published that evening or later; the issuer states no publication time on a
+        page that could be read without displaying current values. 09:00 New York time on
+        the next US business day is taken to follow publication.
+    # SpreadsheetML 2003 fund data file of the US site, as observed by the owner.
+    sheet: Historical
+    header: [As Of, NAV per Share, Ex-Dividends, Shares Outstanding]
+    date_format: "%b %d, %Y"
+    missing: ["--", "-"]
+    funds:
+      - {ticker: IWM, page_url: "https://www.ishares.com/us/products/239710/ishares-russell-2000-etf", currency: USD}
+
+spdr:
+  publication:
+    value: {business_days_after: 1, time: "12:00"}
+    unit: target_business_days_after_nav_date_and_berlin_time
+    source_url: https://github.com/giacomobandinelli/tiferet/blob/main/docs/decisions/0013-known-at-rules-per-source.md
+    checked_on: 2026-11-02
+    verified: false
+    reason: >-
+      Conservative approximation, as for the iShares UCITS funds: noon in Berlin on the next
+      TARGET business day is taken to follow publication of a NAV for day t.
+  # The workbook's layout has not been observed yet. It is set from the owner's --inspect
+  # output; until then --smoke and --ingest stop with a format error.
+  layout: null
+  funds:
+    - holding: us_energy
+      url: https://www.ssga.com/de/de/intermediary/library-content/products/fund-data/etfs/emea/navhist-emea-en-zpde-gy.xlsx
+      currency: USD

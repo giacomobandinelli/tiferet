@@ -33,6 +33,8 @@ Everything tracked by git is written for an external reader: code, comments, doc
 
 Commit messages and pull-request descriptions describe the change only. They contain no `Co-Authored-By` or `Claude-Session` trailers, no "Generated with" lines, and no notes about approval, review status or who made the change; `.claude/settings.json` sets `attribution` so Claude Code adds none of these. (§8.1)
 
+Raw third-party data is never committed, published, exported or offered for download: not in the repository, the website, the reports or any download. Outputs are derived results with source attribution. (0016)
+
 Working notes, scratch analyses and messages for the owner go in `notes/`, which is gitignored. Nothing under `notes/` is staged or committed. (§8.1, §9)
 
 ## Repository map
@@ -167,4 +169,6 @@ uv run python -m tiferet.data.fred --smoke
 uv run python -m tiferet.data.ecb --smoke
 uv run python -m tiferet.data.french --smoke
 uv run python -m tiferet.data.shiller --smoke
+uv run python -m tiferet.data.nav_ishares --smoke
+uv run python -m tiferet.data.nav_spdr --smoke   # fails until spdr.layout is set from --inspect
 ```

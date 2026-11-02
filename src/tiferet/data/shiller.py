@@ -11,9 +11,7 @@ is revised in place, and its values are those of the download.
 Smoke: `uv run python -m tiferet.data.shiller --smoke`.
 """
 
-import io
 import math
-from html.parser import HTMLParser
 from pathlib import PurePosixPath
 from urllib.parse import urljoin, urlsplit
 
@@ -23,7 +21,9 @@ from tiferet.data.adapter import Batch, combine, stamped
 from tiferet.data.cli import Inspection
 from tiferet.data.cli import main as run_cli
 from tiferet.data.errors import SourceFormatError
+from tiferet.data.excel import read_sheets
 from tiferet.data.fetch import Fetcher, FetchError
+from tiferet.data.html_links import page_links
 from tiferet.data.schema import APPROXIMATED
 from tiferet.data.source_config import Fred, Shiller, ShillerRule, ShillerSeries, Sources
 from tiferet.data.timing import Frequency, known_after_lag
@@ -32,23 +32,11 @@ SOURCE = "shiller"
 INSPECT_ROWS = 60
 
 
-class _Links(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.hrefs: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag == "a":
-            self.hrefs.extend(value for name, value in attrs if name == "href" and value)
-
-
 def find_link(page: bytes, config: Shiller) -> str:
     """The absolute URL of the one data file named `config.link_name` on the page."""
-    parser = _Links()
-    parser.feed(page.decode("utf-8", errors="replace"))
     links = {
         urljoin(config.page_url, href)
-        for href in parser.hrefs
+        for href in page_links(page)
         if PurePosixPath(urlsplit(href).path).name == config.link_name
     }
     if len(links) != 1:
@@ -62,11 +50,7 @@ def find_link(page: bytes, config: Shiller) -> str:
 
 
 def _workbook(content: bytes) -> dict[str, pd.DataFrame]:
-    try:
-        sheets = pd.read_excel(io.BytesIO(content), sheet_name=None, header=None, engine="calamine")
-    except Exception:
-        raise SourceFormatError(SOURCE, "the data file is not a readable spreadsheet") from None
-    return {str(name): sheet for name, sheet in sheets.items()}
+    return read_sheets(content, SOURCE, "data file")
 
 
 def _sheet(content: bytes, config: Shiller) -> pd.DataFrame:

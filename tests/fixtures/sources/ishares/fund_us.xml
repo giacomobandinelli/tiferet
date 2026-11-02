@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<ss:Workbook xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<ss:Worksheet ss:Name="Disclaimers">
+<ss:Table>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Synthetic fixture: solely for testing.</ss:Data></ss:Cell></ss:Row>
+</ss:Table>
+</ss:Worksheet>
+<ss:Worksheet ss:Name="Holdings">
+<ss:Table>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Ticker</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">Name</ss:Data></ss:Cell></ss:Row>
+</ss:Table>
+</ss:Worksheet>
+<ss:Worksheet ss:Name="Historical">
+<ss:Table>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">As Of</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">NAV per Share</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">Ex-Dividends</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">Shares Outstanding</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Dec 30, 2022</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="Number">174.38</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">--</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="Number">250000000</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Dec 29, 2022</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="Number">175.06</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">--</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="Number">250000000</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Dec 23, 2022</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">178.12</ss:Data></ss:Cell><ss:Cell/><ss:Cell><ss:Data ss:Type="Number">251000000</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Dec 12, 2022</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="Number">180.11</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="Number">0.62</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="Number">252000000</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="DateTime">2022-09-26T00:00:00.000</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="Number">165.32</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">0.47</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="Number">253000000</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Apr 14, 2022</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="Number">198.54</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="Number">0</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="Number">254000000</ss:Data></ss:Cell></ss:Row>
+<ss:Row/>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Past performance does not guarantee future results.</ss:Data></ss:Cell></ss:Row>
+</ss:Table>
+</ss:Worksheet>
+<ss:Worksheet ss:Name="Performance">
+<ss:Table/>
+</ss:Worksheet>
+<ss:Worksheet ss:Name="Distributions">
+<ss:Table/>
+</ss:Worksheet>
+</ss:Workbook>

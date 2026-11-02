@@ -83,6 +83,22 @@ Raw files must be ingested without exposing the holdout, and agents must not dow
 - The TARGET calendar treats New Year, Good Friday, Easter Monday, 1 May, 25 and 26 December, and 31 December in 1999–2001 as closed. A day wrongly treated as closed only delays `known_at`.
 - Every ECB row is `approximated`.
 
+**Issuer NAVs** (added 2026-11-02).
+
+- A NAV for day t is struck after that day's valuation point and published later. No issuer states its publication time on a page that can be read without displaying current values, so the rule is a conservative approximation, recorded unverified in `config/sources.yaml` with its reason:
+
+  | Funds | Known at |
+  | --- | --- |
+  | UCITS (iShares, SPDR) | 12:00 Europe/Berlin on the next TARGET business day |
+  | US-listed (iShares) | 09:00 America/New_York on the next US business day |
+
+- US business days are weekdays other than the US federal holidays, on their date and their observed date, Good Friday, and the unscheduled closings of the New York Stock Exchange since 1985. Federal holidays on which the exchange is open are treated as closed; like the TARGET calendar, a day wrongly treated as closed only delays `known_at`.
+- Every NAV row is `approximated`. NAVs are stored in the currency of the series and converted to EUR later with the ECB reference rates. The UCITS series currency is read from the "Key Facts" sheet and must equal the configured one.
+- US distributing funds also yield a distributions series (`ishares_us_<ticker>_dist`): the ex-dividend amount per share on its ex-date, stamped with the NAV rule; zero and missing amounts are not stored. Total returns of distributing funds are computed later from the NAV plus the distributions.
+- The iShares fund data link is found on each product page at every run, like the Shiller link, and never stored. The file is SpreadsheetML 2003 XML, read with the standard library XML parser; a document type declaration is refused. German dates ("26.Okt.2022", "18.Juli2017") and decimal commas are parsed strictly: an unknown month name, a malformed number, a missing sheet or title, a currency mismatch, a repeated date, or a dated row after the closing text is a format error.
+- The SPDR workbook's layout has not been observed. `spdr.layout` stays empty until the owner records it from `--inspect`; until then `--smoke` and `--ingest` stop with a format error that says so.
+- The Xtrackers EUR overnight holding and the Vanguard euro government bond holding have no NAV adapter (decision 0014).
+
 **TLS.**
 
 - Every HTTPS download verifies the server's certificate and host name against the operating system's certificate store, through the pinned `truststore` package, instead of the bundled list of the Python installation.
@@ -111,7 +127,11 @@ Raw files must be ingested without exposing the holdout, and agents must not dow
   - French: each table's title line, column header line, row count and date widths; for a table without a header line, the non-numeric lines above its first row;
   - Shiller: the data link, the sheet names and the text cells above the first data row;
   - ECB: the SDMX dimension ids and series codes;
-  - FRED: whether a vintage request up to the development end, and one over the full real-time range, succeed, with FRED's error text if not; observations stop at the development end in both.
+  - FRED: whether a vintage request up to the development end, and one over the full real-time range, succeed, with FRED's error text if not; observations stop at the development end in both;
+  - iShares: the fund data link without its parameter values, the sheet names, the header rows of the NAV sheet, the cell types of its first data row and, for UCITS funds, the series currency;
+  - SPDR: the sheet names, and for each sheet its header rows and the cell types of its first data row.
+
+  Text cells holding a digit are never printed by the NAV adapters, so no NAV and no date can appear.
 
   It exits with status 1 when an item could not be inspected. Configuration such as French section titles is corrected from its output.
 - A failed download's error gives the server's error text (FRED's `error_message`, truncated to 300 characters), the reason of a connection failure, the redirect chain and the final status, all with keys redacted.

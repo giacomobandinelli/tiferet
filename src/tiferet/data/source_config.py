@@ -216,12 +216,133 @@ class Ecb(_Model):
     datasets: tuple[EcbDataset, ...] = Field(min_length=1)
 
 
+HoldingKey = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$")]
+Currency = Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
+
+
+class NavPublication(_Model):
+    """A NAV for date t is known `business_days_after` business days later, at `time` local
+    time: TARGET days and Europe/Berlin for UCITS funds, US business days and America/New_York
+    for US-listed funds."""
+
+    business_days_after: int = Field(ge=0)
+    time: time
+
+
+class IsharesUcitsFund(_Model):
+    """A UCITS holding whose product page is the `isin` source of its entry in
+    config/holdings.yaml."""
+
+    holding: HoldingKey
+    currency: Currency
+    """Currency of the NAV series, checked against "Key Facts" in the fund data file."""
+
+    @property
+    def series_id(self) -> str:
+        return f"ishares_{self.holding}_nav"
+
+
+class IsharesUcits(_Model):
+    publication: Parameter[NavPublication]
+    key_facts_sheet: str = Field(min_length=1)
+    currency_label: str = Field(min_length=1)
+    nav_sheet: str = Field(min_length=1)
+    nav_title: str = Field(min_length=1)
+    funds: tuple[IsharesUcitsFund, ...] = Field(min_length=1)
+
+
+class IsharesUsFund(_Model):
+    """A US-listed signal ETF."""
+
+    ticker: str = Field(pattern=r"^[A-Z]{1,5}$")
+    page_url: HttpsUrl
+    currency: Currency
+    """Currency of the NAV and distributions; the historical sheet does not state it."""
+    distributions: bool = True
+    """Whether the fund pays distributions, stored as a second series. A fund that pays none
+    has no distributions series, and an ex-dividend amount in its file is refused."""
+
+    @property
+    def nav_series_id(self) -> str:
+        return f"ishares_us_{self.ticker.lower()}_nav"
+
+    @property
+    def dist_series_id(self) -> str:
+        return f"ishares_us_{self.ticker.lower()}_dist"
+
+    def series_ids(self) -> tuple[str, ...]:
+        """The NAV series and, for a distributing fund, the distributions series."""
+        if self.distributions:
+            return (self.nav_series_id, self.dist_series_id)
+        return (self.nav_series_id,)
+
+
+class IsharesUs(_Model):
+    publication: Parameter[NavPublication]
+    sheet: str = Field(min_length=1)
+    header: tuple[str, str, str, str]
+    """Date, NAV per share, ex-dividend amount per share, shares outstanding."""
+    date_format: str = Field(min_length=1)
+    """Format of a date held as text; a date held in a date cell is read as such."""
+    missing: tuple[str, ...]
+    """Text cells that mark a missing ex-dividend amount, besides an empty cell."""
+    funds: tuple[IsharesUsFund, ...] = Field(min_length=1)
+
+
+class Ishares(_Model):
+    link_path: str = Field(pattern=r"^/\S+$")
+    """Path fragment of the fund data link on each product page."""
+    link_params: tuple[str, ...] = Field(min_length=1)
+    """Query parameters the fund data link must carry."""
+    ucits: IsharesUcits
+    us: IsharesUs
+
+
+class SpdrLayout(_Model):
+    """Layout of the SPDR NAV history workbook, as reported from `--inspect`."""
+
+    sheet: str = Field(min_length=1)
+    header: tuple[str, ...] = Field(min_length=2)
+    """Text cells of the header row, in order."""
+    date_column: str = Field(min_length=1)
+    nav_column: str = Field(min_length=1)
+    date_format: str = Field(min_length=1)
+    """Format of a date held as text; a date held in a date cell is read as such."""
+
+    @model_validator(mode="after")
+    def _columns_in_header(self) -> Self:
+        if len(set(self.header)) != len(self.header) or self.date_column == self.nav_column:
+            raise ValueError("header cells and the date and NAV columns must be distinct")
+        if not {self.date_column, self.nav_column} <= set(self.header):
+            raise ValueError("date_column and nav_column must be in the header")
+        return self
+
+
+class SpdrFund(_Model):
+    holding: HoldingKey
+    url: HttpsUrl
+    currency: Currency
+
+    @property
+    def series_id(self) -> str:
+        return f"spdr_{self.holding}_nav"
+
+
+class Spdr(_Model):
+    publication: Parameter[NavPublication]
+    layout: SpdrLayout | None
+    """None until the owner reports the file's layout from `--inspect`."""
+    funds: tuple[SpdrFund, ...] = Field(min_length=1)
+
+
 class Sources(_Model):
     silver: SilverSettings
     fred: Fred
     shiller: Shiller
     french: French
     ecb: Ecb
+    ishares: Ishares
+    spdr: Spdr
 
     def series_ids(self) -> list[str]:
         """Every silver series id the configuration produces."""
@@ -230,6 +351,9 @@ class Sources(_Model):
             *(s.series_id for s in self.shiller.series),
             *(i for f in self.french.files for i in f.series_ids()),
             *(s.series_id for d in self.ecb.datasets for s in d.series),
+            *(f.series_id for f in self.ishares.ucits.funds),
+            *(i for f in self.ishares.us.funds for i in f.series_ids()),
+            *(f.series_id for f in self.spdr.funds),
         ]
 
     @model_validator(mode="after")

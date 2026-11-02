@@ -5,6 +5,7 @@ from datetime import date, time
 import pandas as pd
 import pytest
 
+from tiferet.data import timing
 from tiferet.data.store import BERLIN
 from tiferet.data.timing import (
     NEW_YORK,
@@ -96,3 +97,31 @@ def test_adding_target_days_skips_weekends_and_holidays() -> None:
     assert add_target_days(date(2022, 12, 30), 0) == date(2022, 12, 30)
     shifted = shift_target_days(days("2022-04-14", "2022-12-30"), 1)
     assert list(shifted) == [pd.Timestamp("2022-04-19"), pd.Timestamp("2023-01-02")]
+
+
+def test_us_closing_days() -> None:
+    closed = timing.us_closing_days(2022)
+    for day in ("2022-01-17", "2022-04-15", "2022-06-20", "2022-12-26", "2022-11-24"):
+        assert date.fromisoformat(day) in closed, day
+    assert date(2022, 12, 30) not in closed
+    # 1 January 2022 was a Saturday: observed on 31 December 2021.
+    assert date(2021, 12, 31) in timing.us_closing_days(2021)
+    assert date(2023, 1, 2) in timing.us_closing_days(2023)
+    assert date(2012, 10, 29) in timing.us_closing_days(2012)
+    assert all(d.weekday() < 5 for d in closed)
+
+
+def test_add_us_days() -> None:
+    assert timing.add_us_days(date(2022, 12, 23), 1) == date(2022, 12, 27)
+    assert timing.add_us_days(date(2022, 4, 14), 1) == date(2022, 4, 18)
+    assert timing.add_us_days(date(2022, 12, 30), 1) == date(2023, 1, 3)
+    assert timing.add_us_days(date(2022, 12, 31), 0) == date(2022, 12, 31)
+    with pytest.raises(ValueError, match="negative"):
+        timing.add_us_days(date(2022, 1, 3), -1)
+
+
+def test_shift_us_days_keeps_the_dtype() -> None:
+    days = pd.Series(pd.to_datetime(["2022-11-23", "2022-11-25"])).astype("datetime64[us]")
+    shifted = timing.shift_us_days(days, 1)
+    assert list(shifted) == list(pd.to_datetime(["2022-11-25", "2022-11-28"]))
+    assert shifted.dtype == days.dtype
