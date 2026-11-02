@@ -39,10 +39,10 @@ def portfolio_id(page_url: str) -> str:
 
 def currencies() -> dict[str, str]:
     """The configured currency of each UCITS fund, by portfolio id."""
-    holdings = load_holdings()
+    holdings, config = load_holdings(), load_sources()
     return {
-        portfolio_id(nav_ishares.ucits_page(f, holdings)): f.currency
-        for f in load_sources().ishares.ucits.funds
+        portfolio_id(nav_ishares.ucits_page(f, holdings, config.ishares)): f.currency
+        for f in config.ishares.ucits.funds
     }
 
 
@@ -89,7 +89,9 @@ def test_each_page_is_read_before_its_file() -> None:
     collect(fake)
     urls = [url for url, _ in fake.calls]
     assert urls[0] == "https://www.ishares.com/de/privatanleger/de/produkte/253741/"
-    assert urls[1].startswith("https://www.ishares.com/product-data/api/v1/get-fund-document?")
+    assert urls[1].startswith(
+        "https://www.blackrock.com/varnish-api/product-data/api/v1/get-fund-document?"
+    )
     assert dict(parse_qsl(urlsplit(urls[1]).query))["portfolioId"] == "253741"
     assert urls[-2:][0] == US_PAGE
 
@@ -268,8 +270,9 @@ def test_a_dated_us_row_after_the_end_of_the_rows_is_refused() -> None:
 # Links --------------------------------------------------------------------------------------
 
 
+DATA_URL = "https://www.blackrock.com/varnish-api/product-data/api/v1/get-fund-document"
 LINK = (
-    '<a class="icon-xls-export" href="/product-data/api/v1/get-fund-document?appType=fixture'
+    f'<a class="icon-xls-export" href="{DATA_URL}?appType=fixture'
     "&amp;appSubType=fixture&amp;targetSite=de&amp;locale=de_DE&amp;portfolioId=PORTFOLIO"
     '&amp;component=fundData&amp;userType=individual">Daten herunterladen</a>'
 )
@@ -282,9 +285,29 @@ PAGE = text_fixture("ishares", "page_ucits.html")
         (PAGE.replace(LINK, ""), "expected one fund data link .* found 0"),
         (PAGE.replace(LINK, LINK + LINK.replace("fundData", "holdings")), "found 2"),
         (
-            PAGE.replace('href="/product-data', 'href="http://www.ishares.com/product-data'),
+            PAGE.replace(DATA_URL, DATA_URL.replace("https:", "http:")),
+            "not on https://www.blackrock",
+        ),
+        (PAGE.replace("https://www.blackrock.com/varnish-api", "/varnish-api"), "not on https"),
+        (
+            PAGE.replace(DATA_URL, DATA_URL.replace("www.blackrock.com", "www.ishares.com")),
             "not on",
         ),
+        (
+            PAGE.replace(DATA_URL, DATA_URL.replace("www.blackrock.com", "files.example.org")),
+            "not on",
+        ),
+        (
+            PAGE.replace(
+                DATA_URL, DATA_URL.replace("www.blackrock.com", "www.blackrock.com.evil.org")
+            ),
+            "not on",
+        ),
+        (
+            PAGE.replace(DATA_URL, DATA_URL.replace("www.blackrock.com", "www.blackrock.com:8443")),
+            "not on",
+        ),
+        (PAGE.replace(DATA_URL, DATA_URL.replace("https://", "https://user@")), "not on"),
         (PAGE.replace("&amp;userType=individual", ""), r"lacks \['userType'\]"),
     ],
 )
@@ -300,19 +323,32 @@ def test_the_same_link_twice_counts_once() -> None:
 
 def test_every_ucits_holding_page_is_an_ishares_product_page() -> None:
     holdings = load_holdings()
-    pages = [nav_ishares.ucits_page(f, holdings) for f in load_sources().ishares.ucits.funds]
+    config = load_sources().ishares
+    pages = [nav_ishares.ucits_page(f, holdings, config) for f in config.ucits.funds]
     assert all(p.startswith("https://www.ishares.com/de/privatanleger/de/produkte/") for p in pages)
     ishares = {h.key for h in holdings.holdings if h.name.value.startswith("iShares")}
     assert {f.holding for f in load_sources().ishares.ucits.funds} == ishares
 
 
 def test_a_holding_without_an_ishares_page_is_refused() -> None:
-    config = load_sources()
-    fund = config.ishares.ucits.funds[0].model_copy(update={"holding": "us_energy"})
-    with pytest.raises(ValueError, match="not an iShares product page"):
-        nav_ishares.ucits_page(fund, load_holdings())
+    config = load_sources().ishares
+    fund = config.ucits.funds[0].model_copy(update={"holding": "us_energy"})
+    with pytest.raises(ValueError, match=r"not on www\.ishares\.com"):
+        nav_ishares.ucits_page(fund, load_holdings(), config)
     with pytest.raises(ValueError, match="not a holding"):
-        nav_ishares.ucits_page(fund.model_copy(update={"holding": "nope"}), load_holdings())
+        nav_ishares.ucits_page(fund.model_copy(update={"holding": "nope"}), load_holdings(), config)
+
+
+def test_the_hosts_come_from_the_configuration() -> None:
+    config = load_sources()
+    assert (config.ishares.page_host, config.ishares.data_host) == (
+        "www.ishares.com",
+        "www.blackrock.com",
+    )
+    moved = config.ishares.model_copy(update={"data_host": "files.example.org"})
+    sources = config.model_copy(update={"ishares": moved})
+    with pytest.raises(SourceFormatError, match=r"not on https://files\.example\.org"):
+        nav_ishares.collect(responder(), sources, smoke=False)
 
 
 # Inspect ------------------------------------------------------------------------------------
@@ -327,8 +363,8 @@ def test_inspect_prints_structure_and_no_value_or_date() -> None:
     assert "sp500: Historical NAVs first data row cell types: String, String" in text
     assert "sp500: Währung der Reihe: USD" in text
     assert (
-        "IWM: link https://www.ishares.com/product-data/api/v1/get-fund-document with "
-        "parameters appType, appSubType, targetSite, locale, portfolioId, component, userType"
+        "IWM: link https://www.blackrock.com/varnish-api/product-data/api/v1/get-fund-document"
+        " with parameters appType, appSubType, targetSite, locale, portfolioId, component, userType"
     ) in text
     assert "row 0: As Of | NAV per Share | Ex-Dividends | Shares Outstanding" in text
     assert "IWM: Historical first data row cell types: String, Number, String, Number" in text
@@ -372,3 +408,9 @@ def test_a_fund_without_distributions_has_no_distributions_series() -> None:
 def test_an_amount_for_a_fund_without_distributions_is_refused() -> None:
     with pytest.raises(SourceFormatError, match="configured without them"):
         nav_ishares.collect(responder(), without_distributions(), smoke=False)
+
+
+def test_the_data_host_is_compared_without_regard_to_case() -> None:
+    page = PAGE.replace(DATA_URL, DATA_URL.replace("www.blackrock.com", "WWW.BlackRock.com"))
+    assert page != PAGE
+    collect(responder(page=page))

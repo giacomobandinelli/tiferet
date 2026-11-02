@@ -11,6 +11,7 @@ from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Self
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -289,7 +290,15 @@ class IsharesUs(_Model):
     funds: tuple[IsharesUsFund, ...] = Field(min_length=1)
 
 
+Host = Annotated[str, Field(pattern=r"^[a-z0-9]+(?:[.\-][a-z0-9]+)+$")]
+
+
 class Ishares(_Model):
+    page_host: Host
+    """Host of every product page; a page on any other host is refused."""
+    data_host: Host
+    """Host of the fund data link. It differs from `page_host`: the product pages link to
+    files served by BlackRock, which owns iShares. A link on any other host is refused."""
     link_path: str = Field(pattern=r"^/\S+$")
     """Path fragment of the fund data link on each product page."""
     link_params: tuple[str, ...] = Field(min_length=1)
@@ -297,24 +306,48 @@ class Ishares(_Model):
     ucits: IsharesUcits
     us: IsharesUs
 
+    @model_validator(mode="after")
+    def _us_pages_on_the_page_host(self) -> Self:
+        for fund in self.us.funds:
+            if urlsplit(fund.page_url).netloc != self.page_host:
+                raise ValueError(f"the product page of {fund.ticker} is not on {self.page_host}")
+        return self
+
 
 class SpdrLayout(_Model):
-    """Layout of the SPDR NAV history workbook, as reported from `--inspect`."""
+    """Layout of the SPDR NAV history workbook, as observed by the owner.
+
+    One sheet. Above the header, label and value rows in columns A and B. Then the header
+    row, one row per day with the date as text "dd-Mon-yyyy" (English month abbreviations)
+    and numbers in the other columns, newest first, and a footer row.
+    """
 
     sheet: str = Field(min_length=1)
+    labels: tuple[str, ...] = Field(min_length=1)
+    """The labels of the rows above the header, each exactly once."""
+    isin_label: str = Field(min_length=1)
+    """Label of the row whose value must equal the fund's ISIN."""
+    currency_label: str = Field(min_length=1)
+    """Label of the row whose value must equal the fund's configured currency."""
     header: tuple[str, ...] = Field(min_length=2)
     """Text cells of the header row, in order."""
     date_column: str = Field(min_length=1)
     nav_column: str = Field(min_length=1)
-    date_format: str = Field(min_length=1)
-    """Format of a date held as text; a date held in a date cell is read as such."""
+    footer_prefix: str = Field(min_length=1)
+    """Start of the text of the footer row, which ends the data."""
 
     @model_validator(mode="after")
-    def _columns_in_header(self) -> Self:
+    def _consistent(self) -> Self:
         if len(set(self.header)) != len(self.header) or self.date_column == self.nav_column:
             raise ValueError("header cells and the date and NAV columns must be distinct")
         if not {self.date_column, self.nav_column} <= set(self.header):
             raise ValueError("date_column and nav_column must be in the header")
+        if len(set(self.labels)) != len(self.labels):
+            raise ValueError("labels must be distinct")
+        if self.isin_label == self.currency_label:
+            raise ValueError("isin_label and currency_label must differ")
+        if not {self.isin_label, self.currency_label} <= set(self.labels):
+            raise ValueError("isin_label and currency_label must be in labels")
         return self
 
 
@@ -330,8 +363,7 @@ class SpdrFund(_Model):
 
 class Spdr(_Model):
     publication: Parameter[NavPublication]
-    layout: SpdrLayout | None
-    """None until the owner reports the file's layout from `--inspect`."""
+    layout: SpdrLayout
     funds: tuple[SpdrFund, ...] = Field(min_length=1)
 
 

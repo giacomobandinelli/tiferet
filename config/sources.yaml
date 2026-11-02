@@ -491,6 +491,11 @@ ecb:
 # only: raw values are never published, committed or exported. NAVs are stored in the
 # currency of the series and converted to EUR later with ECB reference rates.
 ishares:
+  # Product pages are on page_host. Their fund data links are absolute and point to data_host
+  # (BlackRock owns iShares), as the owner observed on 2026-11-02. A page on another host, or
+  # a link on any host but data_host, is refused. Hosts are identity configuration.
+  page_host: www.ishares.com
+  data_host: www.blackrock.com
   # The fund data link is found on each product page at run time and never stored.
   link_path: /product-data/api/v1/get-fund-document
   link_params: [appType, appSubType, targetSite, locale, portfolioId, component, userType]
@@ -550,9 +555,20 @@ spdr:
     reason: >-
       Conservative approximation, as for the iShares UCITS funds: noon in Berlin on the next
       TARGET business day is taken to follow publication of a NAV for day t.
-  # The workbook's layout has not been observed yet. It is set from the owner's --inspect
-  # output; until then --smoke and --ingest stop with a format error.
-  layout: null
+  # Layout of navhist-emea-en-zpde-gy.xlsx, as observed by the owner on 2026-11-02. One sheet.
+  # Label and value rows in columns A and B, then the header row, then one row per day (date as
+  # text "dd-Mon-yyyy" with English month abbreviations, numbers in the other columns, newest
+  # first), then a footer row. The ISIN value must equal the holding's ISIN in
+  # config/holdings.yaml and the currency value the currency of the fund below.
+  layout:
+    sheet: navhist
+    labels: ["Fund Name:", "ISIN:", "Report Date:", "NAV Currency:"]
+    isin_label: "ISIN:"
+    currency_label: "NAV Currency:"
+    header: [Date, NAV, Shares Outstanding, Total Net Assets]
+    date_column: Date
+    nav_column: NAV
+    footer_prefix: Marketing communication
   funds:
     - holding: us_energy
       url: https://www.ssga.com/de/de/intermediary/library-content/products/fund-data/etfs/emea/navhist-emea-en-zpde-gy.xlsx

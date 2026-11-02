@@ -16,6 +16,7 @@ from collections.abc import Callable, Sequence
 
 import pandas as pd
 
+from tiferet.config import Holding, Holdings
 from tiferet.data.errors import SourceFormatError
 from tiferet.data.source_config import NavPublication
 from tiferet.data.store import BERLIN
@@ -25,6 +26,14 @@ INSPECT_ROWS = 40
 """Rows of a sheet `header_lines` looks at."""
 _DIGIT = re.compile(r"\d")
 _POINT_NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
+
+
+def holding_by_key(holdings: Holdings, key: str) -> Holding:
+    """The one holding with this key in config/holdings.yaml."""
+    matches = [h for h in holdings.holdings if h.key == key]
+    if len(matches) != 1:
+        raise ValueError(f"{key} is not a holding in config/holdings.yaml")
+    return matches[0]
 
 
 def known_at_target(obs: pd.Series, rule: NavPublication) -> pd.Series:

@@ -170,5 +170,5 @@ uv run python -m tiferet.data.ecb --smoke
 uv run python -m tiferet.data.french --smoke
 uv run python -m tiferet.data.shiller --smoke
 uv run python -m tiferet.data.nav_ishares --smoke
-uv run python -m tiferet.data.nav_spdr --smoke   # fails until spdr.layout is set from --inspect
+uv run python -m tiferet.data.nav_spdr --smoke
 ```
