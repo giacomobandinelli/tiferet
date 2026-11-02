@@ -203,12 +203,43 @@ def test_nav_holdings_exist_in_the_holdings_file() -> None:
     assert {f.holding for f in config.spdr.funds} <= keys
 
 
-def test_the_spdr_layout_needs_its_columns_in_the_header() -> None:
+def test_the_spdr_layout_is_checked_for_consistency() -> None:
     from pydantic import ValidationError
 
     from tiferet.data.source_config import SpdrLayout
 
-    with pytest.raises(ValidationError, match="must be in the header"):
-        SpdrLayout(sheet="S", header=("A", "B"), date_column="A", nav_column="C", date_format="%Y")
-    with pytest.raises(ValidationError, match="distinct"):
-        SpdrLayout(sheet="S", header=("A", "A"), date_column="A", nav_column="A", date_format="%Y")
+    base = {
+        "sheet": "S",
+        "labels": ["L1:", "L2:"],
+        "isin_label": "L1:",
+        "currency_label": "L2:",
+        "header": ["A", "B"],
+        "date_column": "A",
+        "nav_column": "B",
+        "footer_prefix": "F",
+    }
+    SpdrLayout.model_validate(base)
+    cases: list[tuple[dict[str, object], str]] = [
+        ({"nav_column": "C"}, "must be in the header"),
+        ({"header": ["A", "A"], "nav_column": "A"}, "distinct"),
+        ({"nav_column": "A"}, "distinct"),
+        ({"labels": ["L1:", "L1:"], "currency_label": "L1:"}, "labels must be distinct"),
+        ({"currency_label": "L1:"}, "must differ"),
+        ({"isin_label": "X:"}, "must be in labels"),
+    ]
+    for change, match in cases:
+        with pytest.raises(ValidationError, match=match):
+            SpdrLayout.model_validate({**base, **change})
+
+
+def test_the_ishares_hosts_are_configured() -> None:
+    ishares = load_sources().ishares
+    assert (ishares.page_host, ishares.data_host) == ("www.ishares.com", "www.blackrock.com")
+
+
+def test_a_us_product_page_must_be_on_the_page_host() -> None:
+    from pydantic import ValidationError
+
+    ishares = load_sources().ishares
+    with pytest.raises(ValidationError, match=r"IWM is not on www\.example\.org"):
+        type(ishares).model_validate({**ishares.model_dump(), "page_host": "www.example.org"})

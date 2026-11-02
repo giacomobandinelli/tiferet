@@ -199,12 +199,23 @@ def shiller_xls(
 
 XlsxCell = str | float | None
 
+SPDR_SHEET = "navhist"
+SPDR_LABELS: tuple[tuple[str, XlsxCell], ...] = (
+    ("Fund Name:", "Synthetic Energy Select Sector Fixture"),
+    ("ISIN:", "IE00BWBXM492"),
+    ("Report Date:", "30-Dec-2022"),
+    ("NAV Currency:", "USD"),
+)
 SPDR_HEADER = ("Date", "NAV", "Shares Outstanding", "Total Net Assets")
 SPDR_ROWS: tuple[tuple[XlsxCell, ...], ...] = (
     ("30-Dec-2022", 61.84, 1200000.0, 74208000.0),
     ("29-Dec-2022", 61.27, 1200000.0, 73524000.0),
-    ("23-Dec-2022", "60.95", 1180000.0, 71921000.0),
+    ("23-Dec-2022", 60.95, 1180000.0, 71921000.0),
     ("14-Apr-2022", 58.02, 1100000.0, 63822000.0),
+    ("07-Jul-2015", 50.0, 100000.0, 5000000.0),
+)
+SPDR_FOOTER: tuple[XlsxCell, ...] = (
+    "Marketing communication. Synthetic fixture: the values are invented.",
 )
 
 
@@ -288,21 +299,19 @@ def xlsx(sheets: dict[str, Sequence[Sequence[XlsxCell]]]) -> bytes:
 
 
 def spdr_xlsx(
-    header: Sequence[str] = SPDR_HEADER, rows: Sequence[Sequence[XlsxCell]] = SPDR_ROWS
+    header: Sequence[str] = SPDR_HEADER,
+    rows: Sequence[Sequence[XlsxCell]] = SPDR_ROWS,
+    labels: Sequence[tuple[str, XlsxCell]] = SPDR_LABELS,
+    footer: Sequence[XlsxCell] | None = SPDR_FOOTER,
+    after_footer: Sequence[Sequence[XlsxCell]] = (),
 ) -> bytes:
-    """A NAV history workbook in a synthetic layout: title rows, a header, daily rows newest
-    first, and a closing note."""
-    sheet: list[Sequence[XlsxCell]] = [
-        ("SPDR synthetic fixture fund",),
-        (),
-        ("Fund Name:", "Synthetic Energy Fixture"),
-        (),
-        tuple(header),
-        *rows,
-        (),
-        ("Past performance is not a reliable indicator of future performance.",),
-    ]
-    return xlsx({"Notes": [("Synthetic fixture",)], "NAV History": sheet})
+    """A NAV history workbook in the layout of the issuer's file: one sheet, label and value
+    rows in columns A and B, a header, daily rows newest first, and a footer row."""
+    sheet: list[Sequence[XlsxCell]] = [*labels, (), tuple(header), *rows]
+    if footer is not None:
+        sheet += [(), footer]
+    sheet += after_footer
+    return xlsx({SPDR_SHEET: sheet})
 
 
 def main() -> None:

@@ -1,9 +1,11 @@
 """iShares fund data adapter: daily NAVs of UCITS holdings and US-listed signal ETFs (plan §5.1;
 decisions 0013, 0014, 0016).
 
-Each product page links to a fund data file through a URL whose path holds
-`/product-data/api/v1/get-fund-document`. The link is found on the page at every run and never
-stored. The file is a SpreadsheetML 2003 workbook, read with the standard library XML parser.
+Each product page, on `ishares.page_host`, links to a fund data file through an absolute URL
+whose path holds `/product-data/api/v1/get-fund-document`. The file is served by BlackRock,
+which owns iShares, so the link is accepted only on `ishares.data_host` and refused on any
+other host. The link is found on the page at every run and never stored. The file is a
+SpreadsheetML 2003 workbook, read with the standard library XML parser.
 
 - **UCITS** (German site): sheet "Historical NAVs" holds a title row, then one row of date and
   NAV per day, newest first, then a disclaimer. Dates are German ("26.Okt.2022", "18.Juli2017")
@@ -37,6 +39,7 @@ from tiferet.data.nav import (
     check_dates,
     dated_rows,
     header_lines,
+    holding_by_key,
     known_at_target,
     known_at_us,
     point_number,
@@ -54,7 +57,6 @@ from tiferet.data.source_config import (
 from tiferet.data.spreadsheetml import BLANK, Cell, Sheet, read_workbook
 
 SOURCE = "ishares"
-ISHARES_HOST = "www.ishares.com"
 STRING, NUMBER, DATETIME = "String", "Number", "DateTime"
 
 GERMAN_MONTHS = {
@@ -104,9 +106,9 @@ def find_link(page: bytes, page_url: str, config: Ishares) -> str:
         )
     link = links.pop()
     parts = urlsplit(link)
-    if parts.scheme != "https" or parts.netloc != ISHARES_HOST:
+    if parts.scheme != "https" or parts.netloc.lower().rstrip(".") != config.data_host:
         raise SourceFormatError(
-            SOURCE, f"the fund data link on {page_url} is not on {ISHARES_HOST}"
+            SOURCE, f"the fund data link on {page_url} is not on https://{config.data_host}"
         )
     names = {name for name, _ in parse_qsl(parts.query, keep_blank_values=True)}
     missing = [name for name in config.link_params if name not in names]
@@ -115,14 +117,12 @@ def find_link(page: bytes, page_url: str, config: Ishares) -> str:
     return link
 
 
-def ucits_page(fund: IsharesUcitsFund, holdings: Holdings) -> str:
-    """The product page of a UCITS holding: the source of its ISIN in config/holdings.yaml."""
-    matches = [h for h in holdings.holdings if h.key == fund.holding]
-    if len(matches) != 1:
-        raise ValueError(f"{fund.holding} is not a holding in config/holdings.yaml")
-    url = matches[0].isin.source_url
-    if urlsplit(url).netloc != ISHARES_HOST:
-        raise ValueError(f"the ISIN source of {fund.holding} is not an iShares product page")
+def ucits_page(fund: IsharesUcitsFund, holdings: Holdings, config: Ishares) -> str:
+    """The product page of a UCITS holding: the source of its ISIN in config/holdings.yaml,
+    which must be on the configured page host."""
+    url = holding_by_key(holdings, fund.holding).isin.source_url
+    if urlsplit(url).netloc != config.page_host:
+        raise ValueError(f"the ISIN source of {fund.holding} is not on {config.page_host}")
     return url
 
 
@@ -343,7 +343,7 @@ def collect(
     downloads: list[Download] = []
     frames: list[pd.DataFrame] = []
     for fund in config.ucits.funds:
-        page_url = ucits_page(fund, known)
+        page_url = ucits_page(fund, known, config)
         page = fetcher.get(page_url)
         data = fetcher.get(find_link(page.content, page_url, config))
         frames.append(
@@ -406,8 +406,9 @@ def inspect(fetcher: Fetcher, sources: Sources, holdings: Holdings | None = None
     failures = 0
     for fund in config.ucits.funds:
         try:
+            page = ucits_page(fund, known, config)
             found, sheets = _inspect_fund(
-                fetcher, ucits_page(fund, known), fund.holding, config, [config.ucits.nav_sheet]
+                fetcher, page, fund.holding, config, [config.ucits.nav_sheet]
             )
             lines += found
             currency = series_currency(sheets, config.ucits, fund.holding)
