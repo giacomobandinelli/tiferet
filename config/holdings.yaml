@@ -283,17 +283,17 @@ holdings:
 
   - key: broad_commodities
     name:
-      value: WisdomTree Broad Commodities UCITS ETF
-      source_url: https://live.deutsche-boerse.com/etf/wisdomtree-broad-commodities-ucits-etf-usd-acc
-      checked_on: 2026-10-25
-      verified: false
-      reason: Issuer site blocks automated access (Cloudflare); read on the Deutsche Börse listing page.
+      value: iShares Diversified Commodity Swap UCITS ETF (Acc)
+      source_url: https://www.ishares.com/de/privatanleger/de/produkte/287254/
+      checked_on: 2026-10-27
+      verified: true
+      note: Fund name on the issuer fund data file, sheet "Key Facts".
     isin:
-      value: IE00BKY4W127
-      source_url: https://live.deutsche-boerse.com/etf/wisdomtree-broad-commodities-ucits-etf-usd-acc
-      checked_on: 2026-10-25
-      verified: false
-      reason: Issuer site blocks automated access (Cloudflare); read on the Deutsche Börse listing page.
+      value: IE00BDFL4P12
+      source_url: https://www.ishares.com/de/privatanleger/de/produkte/287254/
+      checked_on: 2026-10-27
+      verified: true
+      note: ISIN on the issuer fund data file, sheet "Key Facts".
     ladder_role:
       value: inflation
       source_url: https://github.com/giacomobandinelli/tiferet/blob/main/docs/plan.md#31-holdings
@@ -301,26 +301,22 @@ holdings:
       verified: true
     tax_class:
       value: commodity_fund
-      source_url: https://live.deutsche-boerse.com/etf/wisdomtree-broad-commodities-ucits-etf-usd-acc
-      checked_on: 2026-10-25
-      verified: false
-      reason: >-
-        Asset class "Rohstoffe" and swap-based replication from the Deutsche Börse listing
-        page; the issuer site blocks automated access (Cloudflare).
+      source_url: https://www.ishares.com/de/privatanleger/de/produkte/287254/
+      checked_on: 2026-10-27
+      verified: true
+      note: Asset class "Rohstoffe" and synthetic, swap-based structure per the issuer fund data file, sheet "Key Facts".
     currency_hedging:
       value: unhedged
-      source_url: https://live.deutsche-boerse.com/etf/wisdomtree-broad-commodities-ucits-etf-usd-acc
-      checked_on: 2026-10-25
-      verified: false
-      reason: Issuer site blocks automated access (Cloudflare); USD fund currency read on the Deutsche Börse listing page.
+      source_url: https://www.ishares.com/de/privatanleger/de/produkte/287254/
+      checked_on: 2026-10-27
+      verified: true
+      note: Fund and share-class currency USD, unhedged, per the issuer fund data file, sheet "Key Facts".
     fund_launch_date:
-      value: 2021-11-29
-      source_url: https://github.com/giacomobandinelli/tiferet/blob/main/docs/plan.md#311-investable-history
-      checked_on: 2026-10-25
-      verified: false
-      reason: >-
-        Date from plan section 3.1.1, not confirmed: the issuer site blocks automated access
-        (Cloudflare) and the Deutsche Börse page gives only the Xetra listing date, 2021-12-06.
+      value: 2017-07-18
+      source_url: https://www.ishares.com/de/privatanleger/de/produkte/287254/
+      checked_on: 2026-10-27
+      verified: true
+      note: Auflagedatum on the issuer fund data file, sheet "Key Facts".
     exposure_available_from:
       value: 2006-09-22
       source_url: https://www.wisdomtree.com/ch/en/products/commodities/wisdomtree-broad-commodities
@@ -330,6 +326,9 @@ holdings:
         Inception of the WisdomTree (formerly ETF Securities) Broad Commodities ETC, as
         reported in search results quoting the issuer; the issuer page blocks automated
         access (Cloudflare) and was not read.
+      note: >-
+        Records when broad commodity index exposure became available to retail investors.
+        It does not depend on the fund chosen as the holding (decision 0015).
 
   - key: eur_inflation_linked
     name:

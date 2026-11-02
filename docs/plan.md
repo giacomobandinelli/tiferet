@@ -56,7 +56,7 @@ Thirteen holdings, all purchasable by a German retail investor (UCITS ETFs and E
 | Core equity | iShares Core S&P 500 UCITS ETF (Acc) | IE00B5BMR087 | 0.07% |
 | Risky equity, other cycles | iShares Core MSCI EM IMI UCITS ETF (Acc) | IE00BKM4GZ66 | 0.18% |
 | Late cycle | SPDR S&P US Energy Select Sector UCITS ETF (Acc) | IE00BWBXM492 | 0.15% |
-| Inflation | WisdomTree Broad Commodities UCITS ETF | IE00BKY4W127 | 0.19% |
+| Inflation | iShares Diversified Commodity Swap UCITS ETF (Acc) | IE00BDFL4P12 | 0.19% |
 | Inflation, bonds | iShares € Inflation Linked Govt Bond UCITS ETF (Acc) | IE00B0M62X26 | 0.09% |
 | Crash and inflation | Xetra-Gold | DE000A0S9GB0 | custody fee 0.3% p.a. plus VAT |
 | Crash, bonds | iShares $ Treasury Bond 7-10yr UCITS ETF EUR Hedged (Acc) | IE000K1VI152 | 0.10% |
@@ -84,7 +84,7 @@ A holding may be held in the backtest only from the date its exposure was availa
 | S&P 500 | 19 May 2010 | ~2002 via ETFs; earlier via US equity funds |
 | MSCI EM IMI | 30 May 2014 | ~2005 via EM ETFs; earlier via EM funds |
 | US Energy | 7 Jul 2015 | ~2009, earlier energy sector UCITS ETFs |
-| Broad Commodities | 29 Nov 2021 | ~2006–2008, commodity index ETCs |
+| Broad Commodities | 18 Jul 2017 | ~2006–2008, commodity index ETCs |
 | Euro inflation-linked bonds | 18 Nov 2005 | 2005 |
 | Xetra-Gold | Dec 2007 | always, as physical gold |
 | US Treasury 7–10y, EUR-hedged | 25 Jul 2025 (share class) | earlier share classes of the same fund; hedging cost modelled from the US–euro short-rate gap |
