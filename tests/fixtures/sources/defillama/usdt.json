@@ -1,14 +1,8 @@
-{
-  "id": "1",
-  "name": "Tether",
-  "symbol": "USDT",
-  "pegType": "peggedUSD",
-  "tokens": [
-    {"date": 1672012800, "circulating": {"peggedUSD": 66200000000.5}},
-    {"date": 1672099200, "circulating": {"peggedUSD": 66210000000}},
-    {"date": 1672185600, "circulating": {"peggedUSD": 66190000000}},
-    {"date": 1672272000, "circulating": {"peggedUSD": 66230000000}},
-    {"date": 1672358400, "circulating": {"peggedUSD": 66240000000}},
-    {"date": 1672444800, "circulating": {"peggedUSD": 66250000000}}
-  ]
-}
+[
+  {"date": "1672012800", "totalCirculating": {"peggedUSD": 66200000000.5}, "totalCirculatingUSD": {"peggedUSD": 66266200000.500496}, "totalUnreleased": {"peggedUSD": 0}},
+  {"date": "1672099200", "totalCirculating": {"peggedUSD": 66210000000}, "totalCirculatingUSD": {"peggedUSD": 66276209999.99999}},
+  {"date": "1672185600", "totalCirculating": {"peggedUSD": 66190000000}, "totalCirculatingUSD": {"peggedUSD": 66256189999.99999}},
+  {"date": "1672272000", "totalCirculating": {"peggedUSD": 66230000000}, "totalCirculatingUSD": {"peggedUSD": 66296229999.99999}},
+  {"date": "1672358400", "totalCirculating": {"peggedUSD": 66240000000}, "totalCirculatingUSD": {"peggedUSD": 66306239999.99999}},
+  {"date": "1672444800", "totalCirculating": {"peggedUSD": 66250000000}, "totalCirculatingUSD": {"peggedUSD": 66316249999.99999}}
+]

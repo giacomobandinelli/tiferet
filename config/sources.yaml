@@ -587,10 +587,15 @@ spdr:
 # UTC on d + 1 plus publication_lag_hours.
 coinmetrics:
   attribution: Coin Metrics Community Data, CC BY-NC 4.0
-  # The OpenAPI specification lists this host as the community server, which needs no key.
-  # The Community Data page names https://api.coinmetrics.io/v4 instead; --inspect shows
-  # which one answers.
-  api_url: https://community-api.coinmetrics.io/v4
+  api_url:
+    value: https://community-api.coinmetrics.io/v4
+    source_url: https://docs.coinmetrics.io/api-explorer/openapi.json
+    checked_on: 2026-11-04
+    verified: true
+    note: >-
+      The OpenAPI specification lists this host as the community server, which needs no key
+      (the Community Data page names https://api.coinmetrics.io/v4 instead). Verified by the
+      owner's --inspect run on 2026-11-04, which reached it and read its catalog.
   request_interval_seconds:
     value: 0.7
     unit: seconds_between_requests_to_the_host
@@ -622,25 +627,53 @@ coinmetrics:
   metrics:
     price: PriceUSD
     cap: CapMrktCurUSD
-    supply: SplyCur
-  # Reported by --inspect only; a volume series is configured once one is shown to be free.
-  probe_metrics: [volume_reported_spot_usd_1d, volume_trusted_spot_usd_1d]
+    volume: volume_reported_spot_usd_1d
+  # Reported by --inspect only. SplyCur is free for most assets but is not ingested: the cap
+  # is read directly where it is free.
+  probe_metrics: [SplyCur]
   assets:
-    value: [btc, eth, xrp, ltc, bch, ada, bnb, doge, sol, dot, trx, xlm, eos, xmr, dash, etc,
-      xem, link, matic, avax]
+    value:
+      - {asset: btc, series: [price, cap, volume]}
+      - {asset: eth, series: [price, cap, volume]}
+      - {asset: xrp, series: [price, cap, volume]}
+      - {asset: ltc, series: [price, cap, volume]}
+      - {asset: bch, series: [price, cap, volume]}
+      - {asset: ada, series: [price, cap, volume]}
+      - {asset: bnb, series: [price, cap, volume]}
+      - {asset: doge, series: [price, cap, volume]}
+      - {asset: sol, series: [price, volume]}
+      - {asset: dot, series: [price, cap, volume]}
+      - {asset: trx, series: [price, volume]}
+      - {asset: xlm, series: [price, cap, volume]}
+      - {asset: eos, series: [price, volume]}
+      - {asset: xmr, series: [price, cap, volume]}
+      - {asset: dash, series: [price, cap, volume]}
+      - {asset: etc, series: [price, cap, volume]}
+      - {asset: xem, series: [price, cap, volume]}
+      - {asset: link, series: [price, cap, volume]}
+      - {asset: avax, series: [price, volume]}
     source_url: https://gitbook-docs.coinmetrics.io/packages/coin-metrics-community-data.md
     checked_on: 2026-11-04
     verified: false
     reason: >-
-      Drafted from general knowledge of the coins that were among the largest by market
-      cap since 2013, for the point-in-time candidate pools of plan section 3.5; no source
-      listing them was read, because pages showing market caps display current values. The
-      owner confirms the list against a source, and --inspect shows which assets Coin
-      Metrics covers. Coins that were large and later died may be missing (decision 0014).
+      The asset list was drafted from general knowledge of the coins that were among the
+      largest since 2013, for the point-in-time candidate pools of plan section 3.5; no
+      source listing them was read, because pages showing market caps display current
+      values. Which series each asset has in the community tier was read from the owner's
+      --inspect run on 2026-11-04: price, cap and reported spot volume for all but sol, trx,
+      eos and avax, which have price and volume only. Matic has neither price nor cap and
+      is removed. Coins that were large and later died may be missing (decision 0014).
 
 defillama:
   attribution: DefiLlama
-  api_url: https://api.llama.fi
+  api_url:
+    value: https://stablecoins.llama.fi
+    source_url: https://api-docs.defillama.com/llms-free.txt
+    checked_on: 2026-11-04
+    verified: true
+    note: >-
+      The stablecoin endpoints are on this host; https://api.llama.fi answered "Route not
+      found" in the owner's --inspect run on 2026-11-04.
   request_interval_seconds:
     value: 1.0
     unit: seconds_between_requests_to_the_host
@@ -660,16 +693,17 @@ defillama:
   layout:
     value:
       symbol_key: symbol
-      history_key: tokens
       date_key: date
-      value_path: [circulating, peggedUSD]
+      value_path: [totalCirculating, peggedUSD]
     source_url: https://api-docs.defillama.com/llms-free.txt
     checked_on: 2026-11-04
-    verified: false
-    reason: >-
-      The documentation gives no response schema for /stablecoin/{asset}. The keys are
-      assumed from the API's known form and are confirmed by the owner's --inspect run,
-      which prints the keys without values.
+    verified: true
+    note: >-
+      Read from the owner's --inspect run on 2026-11-04. /stablecoincharts/all?stablecoin=<id>
+      answers a list of items with "date" (unix seconds as a string), "totalCirculating"
+      and "totalCirculatingUSD" (each {"peggedUSD"}) and sometimes "totalUnreleased".
+      /stablecoin/<id> answers an object whose top-level "symbol" is checked before an id
+      is used.
   stablecoins:
     value:
       - {symbol: USDT, llama_id: "1"}
@@ -678,8 +712,9 @@ defillama:
     checked_on: 2026-11-04
     verified: false
     reason: >-
-      Ids come from /stablecoins, which an agent may not fetch; each answer's symbol must
-      equal the configured one, so a wrong id fails the run.
+      Id 1 is USDT in the owner's --inspect run; id 2 is not yet confirmed as USDC. Ids come
+      from /stablecoins, which an agent may not fetch; each id's symbol must equal the
+      configured one, so a wrong id fails the run.
 
 ocp:
   attribution: Open Crypto Asset Pricing, Stoeckl and Pukrop, CC BY 4.0, opencryptopricing.com
@@ -700,25 +735,32 @@ ocp:
       - path: daily/factors_cg_investable_daily.csv
         frequency: daily
         date_columns: [date]
+        start_column: date
         columns: [CMKT, CSIZE, CMOM, RF, n_coins]
         count_columns: [n_coins]
         return_units: decimal
       - path: factors_cg_investable.csv
         frequency: weekly
         date_columns: [week_start, week_end]
+        start_column: week_start
+        end_column: week_end
         columns: [CMKT, CSIZE, CMOM, RF, n_coins]
         count_columns: [n_coins]
         return_units: decimal
       - path: monthly/factors_cg_investable_monthly.csv
         frequency: monthly
-        date_columns: [month]
-        columns: [CMKT, CSIZE, CMOM, RF, n_coins]
-        count_columns: [n_coins]
+        date_columns: [month, month_start, month_end]
+        start_column: month_start
+        end_column: month_end
+        columns: [CMKT, CSIZE, CMOM, RF]
         return_units: decimal
     source_url: https://opencryptopricing.com/download.html
     checked_on: 2026-11-04
     verified: false
     reason: >-
-      The weekly columns were read by the owner. The date columns of the daily and monthly
-      files and the units of every return column are assumed until the owner's --inspect
-      run prints the headers; a header that differs fails the run and is named.
+      The headers were read by the owner's --inspect run on 2026-11-04: the daily and weekly
+      files match this configuration and the monthly header is "month, month_start,
+      month_end, CMKT, CSIZE, CMOM, RF" (no n_coins). "month" is a label and is not read; the
+      month's first and last day are month_start and month_end. The date format of the
+      monthly columns and the units of every return column are assumed until a run shows
+      otherwise; a value that differs fails the run and is named.

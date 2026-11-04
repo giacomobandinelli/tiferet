@@ -8,6 +8,9 @@
         ]},
         {"metric": "SplyCur", "frequencies": [
           {"frequency": "1d", "min_time": "2015-07-30T00:00:00.000000000Z", "max_time": "2026-11-03T00:00:00.000000000Z", "community": true}
+        ]},
+        {"metric": "volume_reported_spot_usd_1d", "frequencies": [
+          {"frequency": "1d", "min_time": "2016-01-04T00:00:00.000000000Z", "max_time": "2026-11-03T00:00:00.000000000Z", "community": true}
         ]}
       ]
     }

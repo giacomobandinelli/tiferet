@@ -1,15 +1,16 @@
 """Coin Metrics Community adapter (plan §5.1; decisions 0013, 0014, 0017).
 
-Daily price and market capitalization in US dollars for the configured assets, from the
-keyless community API: `GET /timeseries/asset-metrics`, one request per asset and metric,
-paged strictly by `next_page_token`. Each row holds the asset, a `time` at 00:00 UTC that
-names the day, and the metric's value as a decimal string or null; null values are dropped.
+Daily price, market capitalization and reported spot trading volume in US dollars for the
+configured assets, from the keyless community API: `GET /timeseries/asset-metrics`, one
+request per asset and configured series, paged strictly by `next_page_token`. Each row holds
+the asset, a `time` at 00:00 UTC that names the day, and the metric's value as a decimal
+string or null; null values are dropped.
 
-A metric that the community tier does not serve is answered with HTTP 403 and error type
-`coinmetrics.forbidden_error_type`; it is then treated as missing. Every other error stays
-an error. The market cap is `CapMrktCurUSD` where it is free, else price times current
-supply (`SplyCur`) on the days both have a value. An asset with neither has an empty cap
-series, which ingestion refuses by name.
+Which series an asset has is configuration (`coinmetrics.assets`, from the owner's
+`--inspect` run): a few assets have no free market cap, so no cap series is configured for
+them and none is derived. A configured metric that the community tier does not serve is
+answered with HTTP 403 and error type `coinmetrics.forbidden_error_type`; it is then empty,
+and ingestion refuses an empty configured series by name. Every other error stays an error.
 
 A value for UTC day d is known at 00:00 UTC on d + 1 plus `publication_lag_hours`, an
 approximation; Coin Metrics revises values in place, so the stored value is the latest
@@ -31,7 +32,7 @@ from tiferet.data.cli import main as run_cli
 from tiferet.data.errors import SourceFormatError
 from tiferet.data.fetch import Download, Fetcher, FetchError
 from tiferet.data.pit import DEVELOPMENT_END
-from tiferet.data.source_config import CoinMetrics, Sources
+from tiferet.data.source_config import CoinMetrics, CoinMetricsAsset, Sources
 from tiferet.data.store import HOLDOUT_START
 
 SOURCE = "coinmetrics"
@@ -143,7 +144,9 @@ def metric_values(
     if smoke:
         params["end_time"] = SMOKE_END
     try:
-        downloads, rows = pages(fetcher, config.api_url + TIMESERIES, params, f"{asset} {metric}")
+        downloads, rows = pages(
+            fetcher, config.api_url.value + TIMESERIES, params, f"{asset} {metric}"
+        )
     except FetchError as error:
         if is_forbidden(error, config):
             return [], None
@@ -151,37 +154,23 @@ def metric_values(
     return downloads, parse(rows, asset, metric)
 
 
-def market_cap(
-    cap: pd.Series | None, price: pd.Series | None, supply: pd.Series | None
-) -> pd.Series:
-    """The reported cap, else price times supply on the days both exist, else empty."""
-    if cap is not None:
-        return cap
-    if price is None or supply is None:
-        return pd.Series(dtype=float, index=pd.DatetimeIndex([], name="obs_date"))
-    joined = pd.concat([price, supply], axis=1, join="inner")
-    derived: pd.Series = joined.iloc[:, 0] * joined.iloc[:, 1]
-    return derived
-
-
 def asset_rows(
-    fetcher: Fetcher, config: CoinMetrics, asset: str, *, smoke: bool
+    fetcher: Fetcher, config: CoinMetrics, entry: CoinMetricsAsset, *, smoke: bool
 ) -> tuple[list[Download], list[pd.DataFrame]]:
-    """The price and market cap series of one asset."""
-    names = config.metrics
-    downloads, price = metric_values(fetcher, config, asset, names.price, smoke=smoke)
-    more, cap = metric_values(fetcher, config, asset, names.cap, smoke=smoke)
-    downloads += more
-    supply = None
-    if cap is None:
-        more, supply = metric_values(fetcher, config, asset, names.supply, smoke=smoke)
-        downloads += more
+    """The configured series of one asset. A metric the community tier does not serve gives
+    an empty series, which ingestion refuses by name."""
     lag = config.publication_lag_hours.value
-    empty = pd.Series(dtype=float, index=pd.DatetimeIndex([], name="obs_date"))
-    frames = [
-        stamped_utc_days(config.price_series_id(asset), empty if price is None else price, lag),
-        stamped_utc_days(config.cap_series_id(asset), market_cap(cap, price, supply), lag),
-    ]
+    downloads: list[Download] = []
+    frames: list[pd.DataFrame] = []
+    for kind in entry.series:
+        got, values = metric_values(
+            fetcher, config, entry.asset, config.metrics.name(kind), smoke=smoke
+        )
+        downloads += got
+        empty = pd.Series(dtype=float, index=pd.DatetimeIndex([], name="obs_date"))
+        frames.append(
+            stamped_utc_days(entry.series_id(kind), empty if values is None else values, lag)
+        )
     return downloads, frames
 
 
@@ -189,8 +178,8 @@ def collect(fetcher: Fetcher, sources: Sources, *, smoke: bool) -> Batch:
     config = sources.coinmetrics
     downloads: list[Download] = []
     frames: list[pd.DataFrame] = []
-    for asset in config.assets.value:
-        got, stamped_frames = asset_rows(fetcher, config, asset, smoke=smoke)
+    for entry in config.assets.value:
+        got, stamped_frames = asset_rows(fetcher, config, entry, smoke=smoke)
         downloads += got
         frames += stamped_frames
     return Batch(SOURCE, tuple(downloads), combine(frames), config.series_ids())
@@ -221,13 +210,13 @@ def inspect(fetcher: Fetcher, sources: Sources) -> Inspection:
     """Per asset and metric, whether the catalog lists a daily series and flags it community,
     and its first date if before 2023. Never a later date and never a value."""
     config = sources.coinmetrics
-    names = (config.metrics.price, config.metrics.cap, config.metrics.supply)
+    names = (config.metrics.price, config.metrics.cap, config.metrics.volume)
     lines: list[str] = []
     failures = 0
-    for asset in config.assets.value:
+    for asset in (entry.asset for entry in config.assets.value):
         params = {"assets": asset, "page_size": PAGE_SIZE}
         try:
-            _, entries = pages(fetcher, config.api_url + CATALOG, params, f"catalog {asset}")
+            _, entries = pages(fetcher, config.api_url.value + CATALOG, params, f"catalog {asset}")
         except (FetchError, SourceFormatError) as error:
             lines.append(f"{asset}: {error}")
             failures += 1

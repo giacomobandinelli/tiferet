@@ -388,60 +388,85 @@ def _positive(parameter: Parameter[Decimal], name: str) -> None:
         raise ValueError(f"{name} must be positive")
 
 
+class CoinMetricsSeries(StrEnum):
+    PRICE = "price"
+    CAP = "cap"
+    VOLUME = "volume"
+
+
 class CoinMetricsMetrics(_Model):
-    """Community metric names: price, market cap and the supply used when the cap is not free."""
+    """Community metric names of the three series an asset may have."""
 
     price: MetricName
     cap: MetricName
-    supply: MetricName
+    volume: MetricName
 
     @model_validator(mode="after")
     def _distinct(self) -> Self:
-        if len({self.price, self.cap, self.supply}) != 3:
-            raise ValueError("price, cap and supply metrics must be distinct")
+        if len({self.price, self.cap, self.volume}) != 3:
+            raise ValueError("price, cap and volume metrics must be distinct")
         return self
+
+    def name(self, kind: CoinMetricsSeries) -> str:
+        return {
+            CoinMetricsSeries.PRICE: self.price,
+            CoinMetricsSeries.CAP: self.cap,
+            CoinMetricsSeries.VOLUME: self.volume,
+        }[kind]
+
+
+class CoinMetricsAsset(_Model):
+    """An asset and the series the community tier serves for it. Ingestion refuses a
+    configured series that comes back empty and ignores series that are not configured."""
+
+    asset: AssetKey
+    series: tuple[CoinMetricsSeries, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _distinct(self) -> Self:
+        if len(set(self.series)) != len(self.series):
+            raise ValueError("an asset's series must not repeat")
+        return self
+
+    def series_id(self, kind: CoinMetricsSeries) -> str:
+        """`cm_<asset>_price_usd`, `cm_<asset>_cap_usd` or `cm_<asset>_volume_usd`."""
+        return f"cm_{self.asset}_{kind.value}_usd"
+
+    def series_ids(self) -> tuple[str, ...]:
+        return tuple(self.series_id(k) for k in self.series)
 
 
 class CoinMetrics(_Model):
     attribution: str = Field(min_length=1)
     """Credit carried by every published result derived from this source (decision 0016)."""
-    api_url: HttpsUrl
+    api_url: Sourced[HttpsUrl]
     request_interval_seconds: Parameter[Decimal]
     publication_lag_hours: Parameter[int]
     forbidden_error_type: Sourced[str]
     """`error.type` of the answer to a metric not available without a key."""
     metrics: CoinMetricsMetrics
     probe_metrics: tuple[MetricName, ...] = ()
-    """Metrics `--inspect` reports on that are not ingested, such as candidate volume metrics."""
-    assets: Sourced[tuple[AssetKey, ...]]
+    """Metrics `--inspect` reports on that are not ingested, such as the circulating supply."""
+    assets: Sourced[tuple[CoinMetricsAsset, ...]]
 
     @model_validator(mode="after")
     def _checks(self) -> Self:
         _positive(self.request_interval_seconds, "request_interval_seconds")
         _non_negative(self.publication_lag_hours, "publication_lag_hours")
-        assets = self.assets.value
-        if not assets or len(set(assets)) != len(assets):
+        names = [a.asset for a in self.assets.value]
+        if not names or len(set(names)) != len(names):
             raise ValueError("assets must be a non-empty list without repeats")
         return self
 
-    @staticmethod
-    def price_series_id(asset: str) -> str:
-        return f"cm_{asset}_price_usd"
-
-    @staticmethod
-    def cap_series_id(asset: str) -> str:
-        return f"cm_{asset}_cap_usd"
-
     def series_ids(self) -> tuple[str, ...]:
-        return tuple(
-            i for a in self.assets.value for i in (self.price_series_id(a), self.cap_series_id(a))
-        )
+        return tuple(i for a in self.assets.value for i in a.series_ids())
 
 
 class Stablecoin(_Model):
     symbol: str = Field(pattern=r"^[A-Z]+$")
     llama_id: str = Field(pattern=r"^[0-9]+$")
-    """DefiLlama's stablecoin id, the `{asset}` of `/stablecoin/{asset}`."""
+    """DefiLlama's stablecoin id, the `{id}` of `/stablecoin/{id}` and the `stablecoin`
+    parameter of `/stablecoincharts/all`."""
 
     @property
     def series_id(self) -> str:
@@ -449,11 +474,11 @@ class Stablecoin(_Model):
 
 
 class DefiLlamaLayout(_Model):
-    """Keys of a `/stablecoin/{asset}` answer: the history list, each item's date (unix
-    seconds) and the path to its circulating amount in pegged US dollars."""
+    """Keys of the two answers: the `symbol` of `/stablecoin/{id}`, and in each item of
+    `/stablecoincharts/all` the date (unix seconds) and the path to the circulating amount in
+    pegged US dollars."""
 
     symbol_key: str = Field(min_length=1)
-    history_key: str = Field(min_length=1)
     date_key: str = Field(min_length=1)
     value_path: tuple[str, ...] = Field(min_length=1)
 
@@ -461,7 +486,7 @@ class DefiLlamaLayout(_Model):
 class DefiLlama(_Model):
     attribution: str = Field(min_length=1)
     """Credit carried by every published result derived from this source (decision 0016)."""
-    api_url: HttpsUrl
+    api_url: Sourced[HttpsUrl]
     request_interval_seconds: Parameter[Decimal]
     publication_lag_hours: Parameter[int]
     layout: Sourced[DefiLlamaLayout]
@@ -493,12 +518,17 @@ class ReturnUnits(StrEnum):
 
 
 class OcpFile(_Model):
-    """One Open Crypto Pricing factor file: its path under `ocp.base_url`, its date columns
-    (one, or week start and end for the weekly file) and its value columns in order."""
+    """One Open Crypto Pricing factor file: its path under `ocp.base_url`, its date columns in
+    order, which of them starts and ends the observation period, and its value columns in
+    order. Other date columns, such as a month label, are part of the header and not read."""
 
     path: str = Field(pattern=r"^[a-z0-9_]+(/[a-z0-9_]+)*\.csv$")
     frequency: OcpFrequency
-    date_columns: tuple[str, ...] = Field(min_length=1, max_length=2)
+    date_columns: tuple[str, ...] = Field(min_length=1)
+    start_column: str
+    """The column dated by the observation (`obs_date`)."""
+    end_column: str | None = None
+    """The period's last day; absent for the daily file, whose period is its day."""
     columns: tuple[str, ...] = Field(min_length=1)
     count_columns: tuple[str, ...] = ()
     """Columns holding counts (non-negative integers), stored as they are."""
@@ -509,8 +539,14 @@ class OcpFile(_Model):
         names = [*self.date_columns, *self.columns]
         if len(set(names)) != len(names) or not all(re.fullmatch(r"[A-Za-z_]+", n) for n in names):
             raise ValueError("OCP columns must be distinct names of letters and underscores")
-        if (self.frequency is OcpFrequency.WEEKLY) != (len(self.date_columns) == 2):
-            raise ValueError("the weekly file has a start and an end column; others have one")
+        if self.start_column not in self.date_columns:
+            raise ValueError("start_column must be among date_columns")
+        if (self.frequency is OcpFrequency.DAILY) != (self.end_column is None):
+            raise ValueError("the daily file has no end column; weekly and monthly files do")
+        if self.end_column is not None and (
+            self.end_column not in self.date_columns or self.end_column == self.start_column
+        ):
+            raise ValueError("end_column must be a date column other than start_column")
         if not set(self.count_columns) <= set(self.columns):
             raise ValueError("count_columns must be among columns")
         return self
@@ -576,10 +612,10 @@ class Sources(_Model):
     def host_intervals(self) -> dict[str, float]:
         """Minimum seconds between requests to a host, where a source configures one."""
         return {
-            urlsplit(self.coinmetrics.api_url).netloc: float(
+            urlsplit(self.coinmetrics.api_url.value).netloc: float(
                 self.coinmetrics.request_interval_seconds.value
             ),
-            urlsplit(self.defillama.api_url).netloc: float(
+            urlsplit(self.defillama.api_url.value).netloc: float(
                 self.defillama.request_interval_seconds.value
             ),
         }
