@@ -2,7 +2,7 @@
 <ss:Workbook xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:html="http://www.w3.org/TR/REC-html40">
 <ss:Worksheet ss:Name="Fund Header">
 <ss:Table>
-<ss:Row><ss:Cell><ss:Data ss:Type="String">Synthetic fixture fund</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Synthetic Core S&P 500 fixture fund</ss:Data></ss:Cell></ss:Row>
 <ss:Row><ss:Cell><ss:Data ss:Type="String">Stand</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">30.Dez.2022</ss:Data></ss:Cell></ss:Row>
 </ss:Table>
 </ss:Worksheet>
@@ -11,6 +11,7 @@
 <ss:Row><ss:Cell><ss:Data ss:Type="String">Fondsname</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">Synthetic fixture fund</ss:Data></ss:Cell></ss:Row>
 <ss:Row><ss:Cell><ss:Data ss:Type="String">Fondswährung</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">CURRENCY</ss:Data></ss:Cell></ss:Row>
 <ss:Row><ss:Cell><ss:Data ss:Type="String">Währung der Reihe</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">CURRENCY</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">Rating</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">Die Bewertung erfolgt durch S&P, Moody's und Fitch.</ss:Data></ss:Cell></ss:Row>
 <ss:Row><ss:Cell><ss:Data ss:Type="String">Gesamtkostenquote</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">0,07%</ss:Data></ss:Cell></ss:Row>
 </ss:Table>
 </ss:Worksheet>
@@ -30,7 +31,7 @@
 <ss:Worksheet ss:Name="Holdings">
 <ss:Table>
 <ss:Row><ss:Cell><ss:Data ss:Type="String">Emittententicker</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">Name</ss:Data></ss:Cell></ss:Row>
-<ss:Row><ss:Cell><ss:Data ss:Type="String">FIX</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">Fixture holding</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">FIX</ss:Data></ss:Cell><ss:Cell><ss:Data ss:Type="String">Fixture &amp; holding&#8217;s note&#x2019;</ss:Data></ss:Cell></ss:Row>
 </ss:Table>
 </ss:Worksheet>
 </ss:Workbook>
