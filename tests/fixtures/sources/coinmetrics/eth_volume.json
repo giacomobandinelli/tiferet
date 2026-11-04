@@ -1,0 +1,7 @@
+{
+  "data": [
+    {"asset": "eth", "time": "2022-12-27T00:00:00.000000000Z", "volume_reported_spot_usd_1d": "4100000000"},
+    {"asset": "eth", "time": "2022-12-28T00:00:00.000000000Z", "volume_reported_spot_usd_1d": "3900000000"},
+    {"asset": "eth", "time": "2022-12-29T00:00:00.000000000Z", "volume_reported_spot_usd_1d": "3700000000"}
+  ]
+}

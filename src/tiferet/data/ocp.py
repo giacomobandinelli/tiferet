@@ -3,12 +3,13 @@
 Survivorship-free crypto factor returns by Stoeckl and Pukrop, built from CoinGecko data:
 the investable-universe files at daily, weekly and monthly frequency, with the market
 (CMKT), size (CSIZE) and momentum (CMOM) factors, the risk-free rate (RF) and the number of
-coins (n_coins). Each file is a CSV whose header must equal its configured date columns and
-value columns exactly, in order; a differing header is named in the error. Dates are
-`YYYY-MM-DD` (a monthly file may also write `YYYY-MM`); the weekly file's `week_end` must be
-six days after its `week_start`. An empty field is a missing value. Returns are stored as
-decimal fractions, divided by 100 where a file's `return_units` is percent; counts are
-stored as they are.
+coins (n_coins, daily and weekly files). Each file is a CSV whose header must equal its
+configured date columns and value columns exactly, in order; a differing header is named in
+the error. Dates are `YYYY-MM-DD`; the weekly file's `week_end` must be six days after its
+`week_start`, and the monthly file's `month_start` and `month_end` the first and last day of
+one month (its `month` column is a label and is not read). An empty field is a missing
+value. Returns are stored as decimal fractions, divided by 100 where a file's `return_units`
+is percent; counts are stored as they are.
 
 The files are updated weekly on Mondays and the full history may be recomputed, so this is
 a history source like the Kenneth French library: a value is known `publication_lag_days`
@@ -35,7 +36,6 @@ from tiferet.data.timing import UTC, end_of_day, plus_days
 
 SOURCE = "ocp"
 DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-MONTH = re.compile(r"^\d{4}-\d{2}$")
 WEEK = pd.Timedelta(days=6)
 
 
@@ -54,15 +54,12 @@ def rows(content: bytes, item: str) -> tuple[list[str], list[list[str]]]:
 
 
 def _dates(values: list[str], file: OcpFile, column: str) -> pd.Series:
-    monthly = file.frequency is OcpFrequency.MONTHLY
-    if not all(DAY.fullmatch(v) or (monthly and MONTH.fullmatch(v)) for v in values):
+    if not all(DAY.fullmatch(v) for v in values):
         raise SourceFormatError(SOURCE, f"{file.path}: {column} is not a YYYY-MM-DD date")
     try:
-        dates = pd.to_datetime(pd.Series(values, dtype=str), format="mixed", yearfirst=True)
+        dates = pd.to_datetime(pd.Series(values, dtype=str), format="%Y-%m-%d")
     except ValueError:
         raise SourceFormatError(SOURCE, f"{file.path}: {column} is not a valid date") from None
-    if monthly:
-        dates = dates.dt.to_period("M").dt.start_time
     return dates.astype("datetime64[us]")
 
 
@@ -91,16 +88,26 @@ def parse(content: bytes, file: OcpFile) -> pd.DataFrame:
     if any(len(r) != len(expected) for r in data):
         raise SourceFormatError(SOURCE, f"{file.path}: a row's width differs from its header")
     columns = {name: [r[i] for r in data] for i, name in enumerate(expected)}
-    start = _dates(columns[file.date_columns[0]], file, file.date_columns[0])
-    match file.frequency:
-        case OcpFrequency.DAILY:
-            end = start
-        case OcpFrequency.WEEKLY:
-            end = _dates(columns[file.date_columns[1]], file, file.date_columns[1])
-            if not ((end - start) == WEEK).all():
-                raise SourceFormatError(SOURCE, f"{file.path}: a week does not span seven days")
-        case OcpFrequency.MONTHLY:
-            end = (start + pd.offsets.MonthEnd(0)).astype("datetime64[us]")
+    start = _dates(columns[file.start_column], file, file.start_column)
+    if file.end_column is None:
+        end = start
+    else:
+        end = _dates(columns[file.end_column], file, file.end_column)
+        match file.frequency:
+            case OcpFrequency.WEEKLY:
+                if not ((end - start) == WEEK).all():
+                    raise SourceFormatError(SOURCE, f"{file.path}: a week does not span seven days")
+            case OcpFrequency.MONTHLY:
+                if (
+                    not (start.dt.day == 1).all()
+                    or not (end == (start + pd.offsets.MonthEnd(0)).astype("datetime64[us]")).all()
+                ):
+                    raise SourceFormatError(
+                        SOURCE,
+                        f"{file.path}: a month does not run from its first to its last day",
+                    )
+            case OcpFrequency.DAILY:
+                pass
     if not start.is_monotonic_increasing or start.duplicated().any():
         raise SourceFormatError(SOURCE, f"{file.path}: dates are not unique and increasing")
     wide = pd.DataFrame({"obs_date": start, "period_end": end})

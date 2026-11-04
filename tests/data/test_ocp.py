@@ -100,10 +100,18 @@ def test_percent_returns_are_divided_by_100_and_counts_are_not() -> None:
     assert series(silver, "ocp_cg_n_coins_w").iloc[0] == 790
 
 
-def test_a_monthly_date_may_be_a_full_date() -> None:
-    files = replaced(MONTHLY, "2022-10,", "2022-10-31,")
+def test_the_monthly_file_has_no_coin_count_and_its_label_is_not_read() -> None:
+    files = replaced(MONTHLY, "2022-10,", "October,")
     silver = ocp.collect(fetcher(files), load_sources(), smoke=False).silver
     assert series(silver, "ocp_cg_cmkt_m").index[0] == pd.Timestamp("2022-10-01")
+    assert "ocp_cg_n_coins_m" not in set(silver["series_id"])
+
+
+def test_the_period_of_a_month_ends_on_month_end() -> None:
+    silver = ocp.collect(fetcher(), load_sources(), smoke=False).silver
+    rows = silver[silver["series_id"] == "ocp_cg_cmkt_m"]
+    # 2022-10-31 + 14 days; a month-start based rule would give 2022-10-15.
+    assert known_at(rows, "2022-10-01") == [utc("2022-11-14 23:59:59")]
 
 
 @pytest.mark.parametrize(
@@ -116,7 +124,9 @@ def test_a_monthly_date_may_be_a_full_date() -> None:
         (DAILY, "2022-12-16,", "2022-12-15,", "not unique and increasing"),
         (DAILY, "2022-12-16,", "16.12.2022,", "date is not a YYYY-MM-DD date"),
         (DAILY, "2022-12-16,", "2022-02-30,", "date is not a valid date"),
-        (MONTHLY, "2022-11,", "2022-11-x,", "month is not a YYYY-MM-DD date"),
+        (MONTHLY, "2022-11-01,", "2022-11-x1,", "month_start is not a YYYY-MM-DD date"),
+        (MONTHLY, "2022-11-30", "2022-11-29", "does not run from its first to its last day"),
+        (MONTHLY, "2022-11-01,2022-11-30", "2022-11-02,2022-11-30", "does not run from its first"),
         (DAILY, ",0.0001,815", ",0.0001,815.5", "n_coins value is not a count"),
         (DAILY, "0.0087,", "n/a,", "CMKT value is not a number"),
         (DAILY, "0.0087,", "inf,", "CMKT value is not finite"),
@@ -130,7 +140,9 @@ def test_a_monthly_date_may_be_a_full_date() -> None:
         "dates",
         "date-format",
         "date-invalid",
-        "month",
+        "month-start",
+        "month-end",
+        "month-span",
         "count",
         "number",
         "finite",
@@ -172,10 +184,10 @@ def test_inspect_prints_headers_and_row_counts_only() -> None:
 
 
 def test_inspect_flags_a_header_that_differs() -> None:
-    files = replaced(MONTHLY, "month,CMKT", "month_start,CMKT")
+    files = replaced(MONTHLY, "month_end,CMKT", "month_stop,CMKT")
     inspection = ocp.inspect(fetcher(files), load_sources())
     assert inspection.failures == 1
     assert (
-        "  header (differs from the configuration): month_start, CMKT, CSIZE, CMOM, RF, n_coins"
-        in inspection.lines
+        "  header (differs from the configuration): "
+        "month, month_start, month_stop, CMKT, CSIZE, CMOM, RF" in inspection.lines
     )

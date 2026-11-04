@@ -1,10 +1,13 @@
 """DefiLlama stablecoin adapter (plan §5.1; decisions 0013, 0014, 0017).
 
-The circulating market cap in US dollars of each configured stablecoin, from the free API's
-`GET /stablecoin/{id}`. The answer is a JSON object whose `symbol` must equal the configured
-one, holding a history list; each item has a date in unix seconds at 00:00 UTC and the
-circulating amount in pegged US dollars. The keys are configuration (`defillama.layout`),
-because the documentation gives no schema; `--inspect` prints them without values.
+The circulating market cap in US dollars of each configured stablecoin, from the free API on
+https://stablecoins.llama.fi. An id is first confirmed with `GET /stablecoin/{id}`, whose
+top-level `symbol` must equal the configured one, else the run is refused. The history is
+`GET /stablecoincharts/all?stablecoin={id}`: a JSON list of items, each with a date in unix
+seconds (a string) at 00:00 UTC and `totalCirculating.peggedUSD`, the circulating amount in
+pegged US dollars. The keys are configuration (`defillama.layout`, read from the owner's
+`--inspect` run); `--inspect` prints the item keys, the symbol check and the row count,
+never a value.
 
 The stored value is the circulating supply valued at the $1 peg, not at the market price.
 A value for UTC day d is known at 00:00 UTC on d + 1 plus `publication_lag_hours`, an
@@ -14,6 +17,7 @@ the data; raw values are never published (decision 0016).
 Smoke: `uv run python -m tiferet.data.defillama --smoke`.
 """
 
+import json
 import math
 from typing import Any
 
@@ -25,23 +29,47 @@ from tiferet.data.cli import main as run_cli
 from tiferet.data.errors import SourceFormatError
 from tiferet.data.fetch import Download, Fetcher, FetchError
 from tiferet.data.source_config import DefiLlama, DefiLlamaLayout, Sources, Stablecoin
-from tiferet.data.store import HOLDOUT_START
 
 SOURCE = "defillama"
+INFO = "/stablecoin"
+CHART = "/stablecoincharts/all"
 SECONDS_PER_DAY = 86_400
-FIRST_DATE_BEFORE = int(HOLDOUT_START.tz_convert("UTC").timestamp())
-"""`--inspect` prints a first date only if it is before this moment."""
 
 
-def url(config: DefiLlama, coin: Stablecoin) -> str:
-    return f"{config.api_url}/stablecoin/{coin.llama_id}"
+def info_url(config: DefiLlama, coin: Stablecoin) -> str:
+    return f"{config.api_url.value}{INFO}/{coin.llama_id}"
 
 
-def history(document: dict[str, Any], layout: DefiLlamaLayout, item: str) -> list[Any]:
-    rows = document.get(layout.history_key)
-    if not isinstance(rows, list):
-        raise SourceFormatError(SOURCE, f"{item}: {layout.history_key!r} is not a list")
-    return rows
+def chart_url(config: DefiLlama) -> str:
+    return config.api_url.value + CHART
+
+
+def chart_params(coin: Stablecoin) -> dict[str, str]:
+    return {"stablecoin": coin.llama_id}
+
+
+def check_symbol(content: bytes, coin: Stablecoin, layout: DefiLlamaLayout) -> bool:
+    """Whether the top-level symbol of `/stablecoin/{id}` equals the configured one."""
+    return json_object(content, SOURCE, coin.symbol).get(layout.symbol_key) == coin.symbol
+
+
+def confirm(fetcher: Fetcher, config: DefiLlama, coin: Stablecoin) -> None:
+    """Refuse an id whose symbol is not the configured one."""
+    content = fetcher.get(info_url(config, coin)).content
+    if not check_symbol(content, coin, config.layout.value):
+        raise SourceFormatError(
+            SOURCE, f"{coin.symbol}: id {coin.llama_id} is not {coin.symbol}; check the id"
+        )
+
+
+def chart_items(content: bytes, item: str) -> list[Any]:
+    try:
+        document = json.loads(content)
+    except ValueError:
+        raise SourceFormatError(SOURCE, f"{item}: the answer is not JSON") from None
+    if not isinstance(document, list):
+        raise SourceFormatError(SOURCE, f"{item}: the answer is not a JSON list")
+    return document
 
 
 def _date(row: dict[str, Any], layout: DefiLlamaLayout, item: str) -> int:
@@ -71,13 +99,10 @@ def _amount(row: dict[str, Any], layout: DefiLlamaLayout, item: str) -> float:
 def parse(content: bytes, coin: Stablecoin, layout: DefiLlamaLayout) -> pd.Series:
     """The circulating amount in pegged US dollars by naive UTC day."""
     item = coin.symbol
-    document = json_object(content, SOURCE, item)
-    if document.get(layout.symbol_key) != coin.symbol:
-        raise SourceFormatError(SOURCE, f"{item}: the answer is not for {coin.symbol}")
     days, amounts = [], []
-    for row in history(document, layout, item):
+    for row in chart_items(content, item):
         if not isinstance(row, dict):
-            raise SourceFormatError(SOURCE, f"{item}: a history item is not an object")
+            raise SourceFormatError(SOURCE, f"{item}: a chart item is not an object")
         days.append(_date(row, layout, item))
         amounts.append(_amount(row, layout, item))
     index = pd.DatetimeIndex(pd.to_datetime(pd.Series(days, dtype="int64"), unit="s"))
@@ -91,7 +116,8 @@ def collect(fetcher: Fetcher, sources: Sources, *, smoke: bool) -> Batch:
     downloads: list[Download] = []
     frames: list[pd.DataFrame] = []
     for coin in config.stablecoins.value:
-        result = fetcher.get(url(config, coin))
+        confirm(fetcher, config, coin)
+        result = fetcher.get(chart_url(config), chart_params(coin))
         values = parse(result.content, coin, config.layout.value)
         frames.append(stamped_utc_days(coin.series_id, values, config.publication_lag_hours.value))
         downloads.append(result)
@@ -99,24 +125,17 @@ def collect(fetcher: Fetcher, sources: Sources, *, smoke: bool) -> Batch:
     return Batch(SOURCE, tuple(downloads), combine(frames), expected)
 
 
-def describe(document: dict[str, Any], layout: DefiLlamaLayout) -> list[str]:
-    """Keys, counts and the first date if before 2023; never a value or a later date."""
-    lines = [f"  top-level keys: {', '.join(sorted(document))}"]
-    rows = document.get(layout.history_key)
-    if not isinstance(rows, list):
-        return [*lines, f"  {layout.history_key}: not a list"]
-    items = [r for r in rows if isinstance(r, dict)]
-    keys = sorted({k for r in items for k in r})
-    lines += [f"  {layout.history_key}: {len(rows)} items, keys {', '.join(keys)}"]
-    dates = [r.get(layout.date_key) for r in items]
-    seconds = [int(d) for d in dates if isinstance(d, int | str) and str(d).isdigit()]
-    off_midnight = sum(1 for s in seconds if s % SECONDS_PER_DAY)
-    lines += [
-        f"  dates not at 00:00 UTC: {off_midnight}, not unix seconds: {len(rows) - len(seconds)}"
-    ]
-    if seconds and min(seconds) < FIRST_DATE_BEFORE:
-        first = pd.Timestamp(min(seconds), unit="s").date().isoformat()
-        lines += [f"  first date: {first}"]
+def describe(items: list[Any]) -> list[str]:
+    """Item keys, nested key paths and the row count; never a value or a date."""
+    objects = [r for r in items if isinstance(r, dict)]
+    keys = sorted({k for r in objects for k in r})
+    nested = sorted(
+        {f"{k}.{n}" for r in objects for k, v in r.items() if isinstance(v, dict) for n in v}
+    )
+    lines = [f"  rows: {len(items)}, not objects: {len(items) - len(objects)}"]
+    lines.append(f"  item keys: {', '.join(keys)}")
+    if nested:
+        lines.append(f"  nested keys: {', '.join(nested)}")
     return lines
 
 
@@ -127,17 +146,20 @@ def inspect(fetcher: Fetcher, sources: Sources) -> Inspection:
     failures = 0
     for coin in config.stablecoins.value:
         try:
-            document = json_object(fetcher.get(url(config, coin)).content, SOURCE, coin.symbol)
+            info = fetcher.get(info_url(config, coin)).content
+            same = check_symbol(info, coin, layout)
+            lines.append(
+                f"{coin.symbol} (id {coin.llama_id}): symbol matches: {'yes' if same else 'no'}"
+            )
+            failures += not same
+            items = chart_items(
+                fetcher.get(chart_url(config), chart_params(coin)).content, coin.symbol
+            )
         except (FetchError, SourceFormatError) as error:
             lines.append(f"{coin.symbol}: {error}")
             failures += 1
             continue
-        same = document.get(layout.symbol_key) == coin.symbol
-        lines.append(
-            f"{coin.symbol} (id {coin.llama_id}): symbol matches: {'yes' if same else 'no'}"
-        )
-        failures += not same
-        lines += describe(document, layout)
+        lines += describe(items)
     return Inspection(lines, failures)
 
 

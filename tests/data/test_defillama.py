@@ -24,14 +24,25 @@ from tiferet.data.adapter import Batch, ingest
 from tiferet.data.errors import SourceFormatError
 from tiferet.data.source_config import load_sources
 
-API = "https://api.llama.fi/stablecoin/"
+API = "https://stablecoins.llama.fi"
+INFO = API + "/stablecoin/"
+CHART = API + "/stablecoincharts/all"
 FILES = {"1": "usdt.json", "2": "usdc.json"}
+INFOS = {"1": "info_usdt.json", "2": "info_usdc.json"}
 
 
-def fetcher(replace: dict[str, bytes] | None = None) -> FakeFetcher:
+def fetcher(
+    replace: dict[str, bytes] | None = None, info: dict[str, bytes] | None = None
+) -> FakeFetcher:
     def respond(url: str, params: dict[str, str]) -> bytes:
-        assert url.startswith(API) and not params
-        llama_id = url.removeprefix(API)
+        if url.startswith(INFO):
+            assert not params
+            llama_id = url.removeprefix(INFO)
+            if info and llama_id in info:
+                return info[llama_id]
+            return fixture("defillama", INFOS[llama_id])
+        assert url == CHART and set(params) == {"stablecoin"}
+        llama_id = params["stablecoin"]
         if replace and llama_id in replace:
             return replace[llama_id]
         return fixture("defillama", FILES[llama_id])
@@ -45,12 +56,12 @@ def run(tmp_path: Path, fake: FakeFetcher | None = None) -> Batch:
     return batch
 
 
-def document(name: str = "usdt.json") -> dict[str, Any]:
-    parsed: dict[str, Any] = json.loads(fixture("defillama", name))
+def document(name: str = "usdt.json") -> list[Any]:
+    parsed: list[Any] = json.loads(fixture("defillama", name))
     return parsed
 
 
-def encoded(changed: dict[str, Any]) -> bytes:
+def encoded(changed: Any) -> bytes:
     return json.dumps(changed).encode()
 
 
@@ -81,9 +92,30 @@ def test_output_passes_pit_get_and_respects_the_holdout_boundary(tmp_path: Path)
     assert len(research_view(roots, "defillama_usdc_cap_usd")) == 2
 
 
-def test_a_date_written_as_digits_is_accepted() -> None:
+def test_the_symbol_is_confirmed_before_the_history_is_requested() -> None:
+    fake = fetcher()
+    defillama.collect(fake, load_sources(), smoke=False)
+    assert [u for u, _ in fake.calls] == [INFO + "1", CHART, INFO + "2", CHART]
+    assert fake.calls[1][1] == {"stablecoin": "1"}
+
+
+def test_the_total_circulating_in_pegged_dollars_is_stored_not_the_usd_value() -> None:
+    silver = defillama.collect(fetcher(), load_sources(), smoke=False).silver
+    usdt = silver[silver["series_id"] == "defillama_usdt_cap_usd"].set_index("obs_date")["value"]
+    assert usdt.iloc[1] == pytest.approx(66210000000)  # the fixture's USD value differs
+
+
+def test_an_id_with_another_symbol_is_refused_before_any_history(tmp_path: Path) -> None:
+    fake = fetcher(info={"2": fixture("defillama", "info_usdt.json")})
+    with pytest.raises(SourceFormatError, match=r"defillama: USDC: id 2 is not USDC"):
+        run(tmp_path, fake)
+    assert [p for _, p in fake.calls if p] == [{"stablecoin": "1"}]
+    assert not (tmp_path / "bronze").exists()
+
+
+def test_a_date_written_as_a_number_is_accepted() -> None:
     changed = document()
-    changed["tokens"][0]["date"] = str(changed["tokens"][0]["date"])
+    changed[0]["date"] = int(changed[0]["date"])
     silver = defillama.collect(fetcher({"1": encoded(changed)}), load_sources(), smoke=False)
     assert len(silver.silver[silver.silver["series_id"] == "defillama_usdt_cap_usd"]) == 6
 
@@ -101,30 +133,16 @@ def variant(path: tuple[str | int, ...], value: Any) -> bytes:
     ("content", "message"),
     [
         (b"<html>", "not JSON"),
-        (b"[]", "not a JSON object"),
-        (variant(("symbol",), "USDC"), "not for USDT"),
-        (variant(("tokens",), {}), "'tokens' is not a list"),
-        (variant(("tokens", 0), 1), "not an object"),
-        (variant(("tokens", 0, "date"), 1672012801), "not at 00:00 UTC"),
-        (variant(("tokens", 0, "date"), "26.12.2022"), "not unix seconds"),
-        (variant(("tokens", 0, "date"), 1672444800), "not unique and increasing"),
-        (variant(("tokens", 0, "circulating"), {"peggedEUR": 1}), "lacks circulating.peggedUSD"),
-        (variant(("tokens", 0, "circulating", "peggedUSD"), -1), "negative or not finite"),
-        (variant(("tokens", 0, "circulating", "peggedUSD"), "1"), "not a number"),
+        (b"{}", "not a JSON list"),
+        (variant((0,), 1), "not an object"),
+        (variant((0, "date"), "1672012801"), "not at 00:00 UTC"),
+        (variant((0, "date"), "26.12.2022"), "not unix seconds"),
+        (variant((0, "date"), "1672444800"), "not unique and increasing"),
+        (variant((0, "totalCirculating"), {"peggedEUR": 1}), "lacks totalCirculating.peggedUSD"),
+        (variant((0, "totalCirculating", "peggedUSD"), -1), "negative or not finite"),
+        (variant((0, "totalCirculating", "peggedUSD"), "1"), "not a number"),
     ],
-    ids=[
-        "not-json",
-        "not-object",
-        "symbol",
-        "history",
-        "item",
-        "midnight",
-        "date",
-        "order",
-        "path",
-        "negative",
-        "text",
-    ],
+    ids=["not-json", "not-list", "item", "midnight", "date", "order", "path", "negative", "text"],
 )
 def test_format_errors_name_the_stablecoin_and_write_nothing(
     tmp_path: Path, content: bytes, message: str
@@ -136,24 +154,27 @@ def test_format_errors_name_the_stablecoin_and_write_nothing(
     assert snapshot(tmp_path) == before
 
 
-def test_inspect_prints_keys_counts_and_an_early_first_date_only() -> None:
+def test_inspect_prints_keys_symbol_check_and_row_count_only() -> None:
     inspection = defillama.inspect(fetcher(), load_sources())
     assert inspection.failures == 0
     lines = inspection.lines
-    assert "USDT (id 1): symbol matches: yes" in lines
-    assert "  top-level keys: id, name, pegType, symbol, tokens" in lines
-    assert "  tokens: 6 items, keys circulating, date" in lines
-    assert "  dates not at 00:00 UTC: 0, not unix seconds: 0" in lines
-    assert "  first date: 2022-12-26" in lines
+    assert lines[:4] == [
+        "USDT (id 1): symbol matches: yes",
+        "  rows: 6, not objects: 0",
+        "  item keys: date, totalCirculating, totalCirculatingUSD, totalUnreleased",
+        "  nested keys: totalCirculating.peggedUSD, totalCirculatingUSD.peggedUSD, "
+        "totalUnreleased.peggedUSD",
+    ]
     text = "\n".join(lines)
     numbers = re.findall(r"\d{6,}(?:\.\d+)?", fixture("defillama", "usdt.json").decode())
     assert not [n for n in numbers if n in text]
+    assert not re.search(r"20\d\d", text)
 
 
-def test_inspect_hides_a_first_date_after_2022_and_flags_a_wrong_symbol() -> None:
-    changed = document("usdc.json")
-    changed["tokens"] = [{"date": 1704067200, "circulating": {"peggedUSD": 5}}]
-    inspection = defillama.inspect(fetcher({"1": encoded(changed)}), load_sources())
-    assert inspection.failures == 1
+def test_inspect_flags_a_wrong_symbol_and_an_unusable_answer() -> None:
+    inspection = defillama.inspect(
+        fetcher({"2": b"{}"}, info={"1": fixture("defillama", "info_usdc.json")}), load_sources()
+    )
+    assert inspection.failures == 2
     assert "USDT (id 1): symbol matches: no" in inspection.lines
-    assert not any("2024" in line or "first date" in line for line in inspection.lines[:5])
+    assert any(line.startswith("USDC: ") and "not a JSON list" in line for line in inspection.lines)

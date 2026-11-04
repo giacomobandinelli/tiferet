@@ -27,8 +27,15 @@ from tiferet.data import coinmetrics
 from tiferet.data.adapter import Batch, ingest
 from tiferet.data.errors import DataLossError, SourceFormatError
 from tiferet.data.fetch import FetchError, HttpFetcher
-from tiferet.data.source_config import Sources, load_sources
+from tiferet.data.source_config import (
+    CoinMetricsAsset,
+    CoinMetricsSeries,
+    Sources,
+    load_sources,
+)
 
+SERIES_PRICE, SERIES_CAP, SERIES_VOLUME = CoinMetricsSeries
+VOLUME_METRIC = "volume_reported_spot_usd_1d"
 API = "https://community-api.coinmetrics.io/v4"
 SERIES = API + coinmetrics.TIMESERIES
 CATALOG = API + coinmetrics.CATALOG
@@ -38,7 +45,8 @@ FILES = {
     ("btc", "PriceUSD", "token-a"): "btc_price_page2.json",
     ("btc", "CapMrktCurUSD", None): "btc_cap.json",
     ("eth", "PriceUSD", None): "eth_price.json",
-    ("eth", "SplyCur", None): "eth_supply.json",
+    ("btc", "volume_reported_spot_usd_1d", None): "btc_volume.json",
+    ("eth", "volume_reported_spot_usd_1d", None): "eth_volume.json",
 }
 CATALOGS = {
     ("btc", None): "catalog_btc.json",
@@ -49,7 +57,12 @@ CATALOGS = {
 Key = tuple[str, str, str | None]
 
 
-def sources(assets: tuple[str, ...] = ("btc", "eth")) -> Sources:
+BTC = CoinMetricsAsset(asset="btc", series=(SERIES_PRICE, SERIES_CAP, SERIES_VOLUME))
+ETH = CoinMetricsAsset(asset="eth", series=(SERIES_PRICE, SERIES_VOLUME))
+"""Ethereum without a configured cap, like the assets that have no free market cap."""
+
+
+def sources(assets: tuple[CoinMetricsAsset, ...] = (BTC, ETH)) -> Sources:
     config = load_sources()
     cm = config.coinmetrics
     listed = cm.assets.model_copy(update={"value": assets})
@@ -73,7 +86,7 @@ def fetcher(
         key = (asset, metric, token)
         if replace and key in replace:
             return replace[key]
-        if (asset, metric) in forbid or (asset, metric) == ("eth", "CapMrktCurUSD"):
+        if (asset, metric) in forbid:
             raise forbidden()
         return fixture("coinmetrics", FILES[key])
 
@@ -121,11 +134,21 @@ def test_reported_cap_is_used_where_it_is_free() -> None:
     assert ("btc", "SplyCur") not in {(p["assets"], p["metrics"]) for _, p in fake.calls}
 
 
-def test_cap_is_price_times_supply_where_the_cap_is_forbidden() -> None:
+def test_volume_is_stored_as_its_own_series() -> None:
     silver = coinmetrics.collect(fetcher(), sources(), smoke=False).silver
-    cap = values(silver, "cm_eth_cap_usd")
-    assert [d.date().isoformat() for d in cap.index] == ["2022-12-28", "2022-12-29", "2022-12-30"]
-    assert cap[pd.Timestamp("2022-12-29")] == pytest.approx(1210.5 * 120000200)
+    volume = values(silver, "cm_btc_volume_usd")
+    assert len(volume) == 4  # the null day is dropped
+    assert volume[pd.Timestamp("2022-12-27")] == pytest.approx(9.1e9)
+    assert len(values(silver, "cm_eth_volume_usd")) == 3
+
+
+def test_only_configured_series_are_requested_and_stored() -> None:
+    fake = fetcher()
+    silver = coinmetrics.collect(fake, sources(), smoke=False).silver
+    requested = {(p["assets"], p["metrics"]) for _, p in fake.calls}
+    assert ("eth", "CapMrktCurUSD") not in requested
+    assert ("btc", "SplyCur") not in requested
+    assert "cm_eth_cap_usd" not in set(silver["series_id"])
 
 
 def test_known_the_day_after_plus_the_lag() -> None:
@@ -142,7 +165,7 @@ def test_output_passes_pit_get_and_respects_the_holdout_boundary(tmp_path: Path)
     # 2022-12-29 is known at 00:00 UTC on 2022-12-31; 2022-12-30 at 01:00 Berlin on 1 January.
     assert len(research_view(roots, "cm_btc_cap_usd")) == 3
     assert len(production_view(roots, "cm_btc_cap_usd")) == 5
-    assert len(research_view(roots, "cm_eth_cap_usd")) == 2
+    assert len(research_view(roots, "cm_eth_volume_usd")) == 3
 
 
 def test_smoke_requests_stop_at_the_development_end() -> None:
@@ -151,12 +174,17 @@ def test_smoke_requests_stop_at_the_development_end() -> None:
     assert {params.get("end_time") for _, params in fake.calls} == {"2022-12-31"}
 
 
-def test_a_metric_without_any_cap_is_refused_by_name(tmp_path: Path) -> None:
-    fake = fetcher(forbid=frozenset({("eth", "SplyCur")}))
+def test_a_configured_series_that_is_not_served_is_refused_by_name(tmp_path: Path) -> None:
+    fake = fetcher(forbid=frozenset({("btc", "CapMrktCurUSD")}))
     batch = coinmetrics.collect(fake, sources(), smoke=False)
-    with pytest.raises(DataLossError, match="cm_eth_cap_usd"):
+    with pytest.raises(DataLossError, match="cm_btc_cap_usd"):
         ingest(batch, silver_roots(tmp_path), tmp_path / "bronze", max_row_loss=0.001)
     assert not (tmp_path / "bronze").exists()
+
+
+def test_an_asset_without_a_free_cap_is_not_refused_for_it(tmp_path: Path) -> None:
+    batch = run(tmp_path)
+    assert "cm_eth_cap_usd" not in batch.expected
 
 
 def test_other_errors_stay_errors() -> None:
@@ -238,7 +266,7 @@ def test_paging_stops_at_the_page_cap(monkeypatch: pytest.MonkeyPatch) -> None:
         return page(token=f"t{next(counter)}")
 
     with pytest.raises(SourceFormatError, match="more than 3 pages"):
-        coinmetrics.collect(FakeFetcher(respond), sources(("btc",)), smoke=False)
+        coinmetrics.collect(FakeFetcher(respond), sources((BTC,)), smoke=False)
 
 
 class ScriptResponse:
@@ -283,23 +311,25 @@ def http_error(code: int, body: bytes = b"", retry_after: str | None = None) -> 
     return urllib.error.HTTPError(SERIES, code, "error", headers, io.BytesIO(body))
 
 
-def test_429_is_retried_after_its_delay_and_403_falls_back_to_supply() -> None:
+def test_429_is_retried_after_its_delay_and_403_leaves_the_series_empty() -> None:
     sleeps: list[float] = []
     opener = ScriptOpener(
         http_error(429, retry_after="5"),  # type: ignore[arg-type]
         fixture("coinmetrics", "eth_price.json"),
         http_error(403, fixture("coinmetrics", "error_forbidden.json")),  # type: ignore[arg-type]
-        fixture("coinmetrics", "eth_supply.json"),
+        fixture("coinmetrics", "eth_volume.json"),
     )
     client = HttpFetcher(opener=opener, clock=lambda: 0.0, sleep=sleeps.append, min_interval=0.0)
-    silver = coinmetrics.collect(client, sources(("eth",)), smoke=False).silver
+    asset = CoinMetricsAsset(asset="eth", series=(SERIES_PRICE, SERIES_CAP, SERIES_VOLUME))
+    batch = coinmetrics.collect(client, sources((asset,)), smoke=False)
     assert sleeps == [5.0]
-    assert len(values(silver, "cm_eth_cap_usd")) == 3
+    assert len(values(batch.silver, "cm_eth_cap_usd")) == 0
+    assert len(values(batch.silver, "cm_eth_volume_usd")) == 3
     assert [re.search(r"metrics=(\w+)", u).group(1) for u in opener.urls] == [  # type: ignore[union-attr]
         "PriceUSD",
         "PriceUSD",
         "CapMrktCurUSD",
-        "SplyCur",
+        VOLUME_METRIC,
     ]
 
 
@@ -307,10 +337,9 @@ def test_requests_are_spaced_by_the_configured_interval() -> None:
     sleeps: list[float] = []
     opener = ScriptOpener(
         fixture("coinmetrics", "eth_price.json"),
-        http_error(403, fixture("coinmetrics", "error_forbidden.json")),  # type: ignore[arg-type]
-        fixture("coinmetrics", "eth_supply.json"),
+        fixture("coinmetrics", "eth_volume.json"),
     )
-    config = sources(("eth",))
+    config = sources((ETH,))
     client = HttpFetcher(
         opener=opener,
         clock=lambda: 0.0,
@@ -318,13 +347,18 @@ def test_requests_are_spaced_by_the_configured_interval() -> None:
         host_intervals=config.host_intervals(),
     )
     coinmetrics.collect(client, config, smoke=False)
-    assert sleeps == [0.7, 0.7]
+    assert sleeps == [0.7]
 
 
 def fixture_tokens() -> set[str]:
     """Every value and date in the catalog fixtures that inspect must not print."""
     text = "".join(fixture("coinmetrics", n).decode() for n in set(CATALOGS.values()))
-    return set(re.findall(r"\d{4}-\d{2}-\d{2}", text)) - {"2010-07-18", "2015-08-08", "2015-07-30"}
+    return set(re.findall(r"\d{4}-\d{2}-\d{2}", text)) - {
+        "2010-07-18",
+        "2015-08-08",
+        "2015-07-30",
+        "2016-01-04",
+    }
 
 
 def test_inspect_prints_availability_and_early_first_dates_only() -> None:
@@ -334,9 +368,10 @@ def test_inspect_prints_availability_and_early_first_dates_only() -> None:
     lines = inspection.lines
     assert "btc PriceUSD: 1d listed, community yes, from 2010-07-18" in lines
     assert "btc SplyCur: 1d not listed, community no" in lines
-    assert "btc volume_reported_spot_usd_1d: 1d listed, community no" in lines
+    assert f"btc {VOLUME_METRIC}: 1d listed, community yes" in lines
     assert "eth CapMrktCurUSD: 1d not listed, community no" in lines
     assert "eth SplyCur: 1d listed, community yes, from 2015-07-30" in lines
+    assert f"eth {VOLUME_METRIC}: 1d listed, community yes, from 2016-01-04" in lines
     text = "\n".join(lines)
     assert not [t for t in fixture_tokens() if t in text]
     assert not re.search(r"20(2[3-9]|[3-9]\d)", text)
@@ -347,7 +382,7 @@ def test_inspect_counts_an_asset_missing_from_the_catalog() -> None:
     def respond(url: str, params: dict[str, str]) -> bytes:
         return page()
 
-    inspection = coinmetrics.inspect(FakeFetcher(respond), sources(("btc",)))
+    inspection = coinmetrics.inspect(FakeFetcher(respond), sources((BTC,)))
     assert inspection.failures == 1
     assert inspection.lines == ["btc: not in the catalog"]
 
@@ -367,5 +402,5 @@ def test_inspect_joins_an_asset_metrics_listed_across_pages() -> None:
             return page(first, token="next")
         return page(later)
 
-    inspection = coinmetrics.inspect(FakeFetcher(respond), sources(("btc",)))
+    inspection = coinmetrics.inspect(FakeFetcher(respond), sources((BTC,)))
     assert "btc SplyCur: 1d listed, community yes" in inspection.lines

@@ -272,28 +272,50 @@ def test_licensed_sources_name_their_licence() -> None:
 def test_crypto_series_ids() -> None:
     config = load_sources()
     ids = set(config.series_ids())
-    assert {"cm_btc_price_usd", "cm_btc_cap_usd", "cm_eth_cap_usd"} <= ids
+    assert {"cm_btc_price_usd", "cm_btc_cap_usd", "cm_btc_volume_usd", "cm_eth_cap_usd"} <= ids
+    assert {"cm_link_price_usd", "cm_link_cap_usd", "cm_link_volume_usd"} <= ids
     assert {"defillama_usdt_cap_usd", "defillama_usdc_cap_usd"} <= ids
-    assert {"ocp_cg_cmkt_d", "ocp_cg_cmkt_w", "ocp_cg_n_coins_m"} <= ids
+    assert {"ocp_cg_cmkt_d", "ocp_cg_cmkt_w", "ocp_cg_n_coins_w"} <= ids
+    assert "ocp_cg_n_coins_m" not in ids
     assert config.host_intervals() == {
         "community-api.coinmetrics.io": 0.7,
-        "api.llama.fi": 1.0,
+        "stablecoins.llama.fi": 1.0,
     }
+
+
+def test_coin_metrics_series_follow_the_free_tier() -> None:
+    assets = {a.asset: {k.value for k in a.series} for a in load_sources().coinmetrics.assets.value}
+    assert "matic" not in assets
+    assert assets["sol"] == assets["trx"] == assets["eos"] == assets["avax"] == {"price", "volume"}
+    assert all(
+        kinds == {"price", "cap", "volume"}
+        for a, kinds in assets.items()
+        if a not in {"sol", "trx", "eos", "avax"}
+    )
+    ids = set(load_sources().series_ids())
+    assert not {"cm_sol_cap_usd", "cm_trx_cap_usd", "cm_eos_cap_usd", "cm_avax_cap_usd"} & ids
+    assert "volume_trusted_spot_usd_1d" not in load_sources().coinmetrics.probe_metrics
 
 
 @pytest.mark.parametrize(
     ("path", "value", "message"),
     [
-        (("coinmetrics", "assets", "value"), ["btc", "btc"], "without repeats"),
-        (("coinmetrics", "assets", "value"), ["BTC"], "String should match"),
+        (("coinmetrics", "assets", "value", 1, "asset"), "btc", "without repeats"),
+        (("coinmetrics", "assets", "value", 0, "asset"), "BTC", "String should match"),
+        (("coinmetrics", "assets", "value", 0, "series"), ["price", "price"], "must not repeat"),
+        (("coinmetrics", "assets", "value", 0, "series"), [], "at least 1 item"),
+        (("coinmetrics", "assets", "value", 0, "series"), ["supply"], "Input should be"),
         (("coinmetrics", "request_interval_seconds", "value"), 0, "must be positive"),
         (("coinmetrics", "publication_lag_hours", "value"), -1, "cannot be negative"),
-        (("coinmetrics", "metrics", "supply"), "PriceUSD", "must be distinct"),
+        (("coinmetrics", "metrics", "volume"), "PriceUSD", "must be distinct"),
         (("defillama", "stablecoins", "value", 1, "symbol"), "USDT", "symbol values repeat"),
         (("defillama", "stablecoins", "value", 1, "llama_id"), "1", "llama_id values repeat"),
         (("defillama", "stablecoins", "value"), [], "must not be empty"),
-        (("ocp", "files", "value", 0, "date_columns"), ["a", "b"], "start and an end"),
-        (("ocp", "files", "value", 1, "date_columns"), ["week_start"], "start and an end"),
+        (("ocp", "files", "value", 0, "start_column"), "a", "start_column must be among"),
+        (("ocp", "files", "value", 0, "end_column"), "date", "no end column"),
+        (("ocp", "files", "value", 1, "end_column"), None, "no end column; weekly"),
+        (("ocp", "files", "value", 1, "end_column"), "week_start", "other than start_column"),
+        (("ocp", "files", "value", 2, "end_column"), "n_coins", "other than start_column"),
         (("ocp", "files", "value", 0, "count_columns"), ["x"], "among columns"),
         (("ocp", "files", "value", 0, "columns"), ["CMKT", "CMKT"], "distinct names"),
         (("ocp", "files", "value", 0, "path"), "../x.csv", "String should match"),

@@ -294,7 +294,7 @@ Stooq is not used: its downloads require an API key since March 2026 and its ter
 
 **Crypto.** No free, licensed history of total crypto market capitalization exists, so BTC dominance is not computed; the BTC-to-stablecoin ratio replaces it (decision 0017). Sources:
 
-1. Coin Metrics Community data (CC BY-NC 4.0): daily price and market capitalization of BTC, ETH and the coins that were among the largest at the time, for the candidate pools of §3.5. Coins that were large and later died may be missing.
+1. Coin Metrics Community data (CC BY-NC 4.0): daily price, market capitalization (where the community tier has it) and reported spot trading volume of BTC, ETH and the coins that were among the largest at the time, for the candidate pools of §3.5. Coins that were large and later died may be missing (decision 0014).
 2. DefiLlama stablecoins API: daily circulating USDT and USDC, valued at the peg.
 3. Open Crypto Pricing (Stoeckl and Pukrop, CC BY 4.0): survivorship-free crypto market, size and momentum factors from 30 December 2013, daily, weekly and monthly. Its market factor is the reference for the crypto market return.
 

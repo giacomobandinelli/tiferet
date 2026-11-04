@@ -107,24 +107,27 @@ Raw files must be ingested without exposing the holdout, and agents must not dow
   - A value for UTC day d is known at 00:00 UTC on d + 1 plus `publication_lag_hours`, 24 hours for both sources. Neither source states when daily values are published, so the lag is recorded unverified in `config/sources.yaml` with its reason. Every row is `approximated`.
   - Coin Metrics revises values in place and DefiLlama's history can change, so each run keeps only the latest download, as for the other full-refresh sources.
 - **Coin Metrics requests:**
-  - There is one request per asset and metric, with `frequency=1d`, `page_size=10000` and `paging_from=start`.
+  - There is one request per asset and configured series (price, cap, volume), with `frequency=1d`, `page_size=10000` and `paging_from=start`.
   - Pages are followed strictly by `next_page_token`. A page that is not a JSON object with a `data` list, an empty or repeated token, or more than 1000 pages is a format error.
   - Rows are checked for the requested asset, a `time` at 00:00 UTC, the metric's presence, a value that is a decimal string or null (nulls are dropped), and days that are unique and increasing.
   - Smoke runs stop at 2022-12-31, as for FRED. Requests to the host are spaced by `request_interval_seconds` (0.7 s, against the documented "10 requests per 6 seconds"), and a 429 is retried after its Retry-After.
 - **Coin Metrics missing metrics:**
   - The API answers a metric the community tier does not serve with HTTP 403 and error type `forbidden`. Its specification says to identify errors by type, not by message. Only that answer marks a metric missing; every other error, such as a 400 `bad_parameter`, stays an error.
-  - The market cap is `CapMrktCurUSD` where it is served, else `PriceUSD × SplyCur` on the days both have a value. An asset with neither has an empty cap series, which ingestion refuses by name.
-- **Coin Metrics `--inspect`:** it reads `/catalog-v2/asset-metrics` per asset and prints, for each configured and probe metric, whether a daily series is listed and flagged `community`. It prints the first date only when it is before 2023; it never prints a later date or a value.
+  - Which series an asset has is configured (`coinmetrics.assets`, from the owner's `--inspect` run of 2026-11-04; decision 0014). The cap is `CapMrktCurUSD` where it is free and is not derived from supply elsewhere: sol, trx, eos and avax have no cap series. Ingestion refuses a configured series that comes back empty, by name, and never an unconfigured one.
+- **Coin Metrics `--inspect`:** it reads `/catalog-v2/asset-metrics` per asset and prints, for each of the three metrics and each probe metric, whether a daily series is listed and flagged `community`. It prints the first date only when it is before 2023; it never prints a later date or a value.
 - **DefiLlama:**
-  - `/stablecoin/{id}` is read for USDT and USDC. The documentation gives no schema, so the keys (`symbol`, the `tokens` history, its `date` in unix seconds and `circulating.peggedUSD`) are configuration, confirmed by the owner's `--inspect` run, which prints keys and counts and never a value.
-  - The answer's symbol must equal the configured one. Each date must be at 00:00 UTC, dates must be unique and increasing, and each amount must be a non-negative number.
-  - The stored value is circulating supply at the $1 peg (decision 0017).
+  - The host is `https://stablecoins.llama.fi`; `api.llama.fi` answered "Route not found" (owner's `--inspect` run, 2026-11-04).
+  - Before an id is used, `GET /stablecoin/{id}` is read and its top-level `symbol` must equal the configured symbol (id 1 is USDT, id 2 must be USDC); otherwise the run is refused and the history is not requested.
+  - The history is `GET /stablecoincharts/all?stablecoin={id}`: a JSON list of items with `date` (unix seconds as a string), `totalCirculating` and `totalCirculatingUSD` (each `{"peggedUSD": ...}`) and sometimes `totalUnreleased`. The keys are configuration (`defillama.layout`).
+  - Each date must be at 00:00 UTC, dates must be unique and increasing, and each amount must be a non-negative number.
+  - The stored value is `totalCirculating.peggedUSD`, the circulating supply at the $1 peg (decision 0017), not `totalCirculatingUSD`.
+  - `--inspect` prints the symbol check, the row count and the item keys (nested keys as `parent.child`), never a value or a date.
 - **Open Crypto Pricing:**
   - The factor files are updated weekly on Mondays and the full history may be recomputed at any update. Like the Kenneth French library, it is a history source: a value is known 14 days after the end of its period, at 23:59:59 UTC. That is two update cycles, because the source does not say whether a Monday update includes the week just ended.
-  - The period end is the day itself (daily), `week_end` (weekly) or the month end (monthly).
+  - The period end is the day itself (daily), `week_end` (weekly) or `month_end` (monthly).
   - Only the latest download is kept, so a recomputed value replaces the earlier one under the same rule.
-  - Each file's header must equal its configured date and value columns exactly, in order. The daily and monthly date columns and the return units are assumed until the owner's `--inspect` run, which prints each header, so a differing header fails and is named.
-  - `week_end` must be six days after `week_start`. Counts (`n_coins`) must be non-negative integers. Returns are stored as decimal fractions.
+  - Each file's header must equal its configured date and value columns exactly, in order, so a differing header fails and is named. The owner's `--inspect` run of 2026-11-04 confirmed the daily and weekly headers and showed the monthly header `month, month_start, month_end, CMKT, CSIZE, CMOM, RF`, which has no `n_coins`, so there is no monthly coin-count series. The return units and the date format of the monthly columns are assumed until a run shows otherwise.
+  - `week_end` must be six days after `week_start`. In the monthly file `month_start` and `month_end` must be the first and last day of one month; `month` is a label and is not read. Counts (`n_coins`, daily and weekly) must be non-negative integers. Returns are stored as decimal fractions.
   - Every row is `approximated`.
 
 **TLS.**
