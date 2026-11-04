@@ -3,6 +3,7 @@
 <ss:Worksheet ss:Name="Disclaimers">
 <ss:Table>
 <ss:Row><ss:Cell><ss:Data ss:Type="String">Synthetic fixture: solely for testing.</ss:Data></ss:Cell></ss:Row>
+<ss:Row><ss:Cell><ss:Data ss:Type="String">https://www.example.org/literature#!type=ishares&style=All&view=list</ss:Data></ss:Cell></ss:Row>
 </ss:Table>
 </ss:Worksheet>
 <ss:Worksheet ss:Name="Holdings">

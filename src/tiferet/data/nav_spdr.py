@@ -15,7 +15,8 @@ The layout is configured as `spdr.layout` in config/sources.yaml and checked str
 ISIN must equal the holding's ISIN in config/holdings.yaml and the NAV currency the configured
 one, and an unknown or repeated label, a changed header, a date that does not match, a NAV
 that is not a number, a repeated date, a missing footer or any row after the footer is a format
-error. Only the NAV series is stored.
+error. Only the NAV series is stored. Every format error names the fund by its series id
+(`spdr_<holding>_nav`).
 
 Every row is `approximated`: a NAV is known at noon in Berlin on the next TARGET business day
 (config/sources.yaml). NAVs are stored in the fund currency.
@@ -54,8 +55,12 @@ _DATE = re.compile(r"(\d{2})-([A-Za-z]{3})-(\d{4})")
 Row = list[object]
 
 
-def workbook(content: bytes) -> dict[str, pd.DataFrame]:
-    return read_sheets(content, SOURCE, "NAV file", keep_default_na=False)
+def workbook(content: bytes, item: str) -> dict[str, pd.DataFrame]:
+    """Every sheet of the NAV file of fund `item`."""
+    try:
+        return read_sheets(content, SOURCE, "NAV file", keep_default_na=False)
+    except SourceFormatError as error:
+        raise SourceFormatError(SOURCE, f"{item}: {error.detail}") from None
 
 
 def _blank(value: object) -> bool:
@@ -135,8 +140,8 @@ def _nav(value: object) -> float | None:
 
 def parse(content: bytes, layout: SpdrLayout, fund: SpdrFund, isin: str) -> pd.DataFrame:
     """Rows `obs_date, nav` in ascending date order, after checking the layout strictly."""
-    item = fund.holding
-    sheets = workbook(content)
+    item = fund.series_id
+    sheets = workbook(content, item)
     if list(sheets) != [layout.sheet]:
         raise SourceFormatError(
             SOURCE, f"{item}: expected the one sheet {layout.sheet!r}, found {list(sheets)}"
@@ -226,7 +231,7 @@ def _kind(value: object) -> str:
 def describe(content: bytes, item: str) -> list[str]:
     """The sheet names, and per sheet its header rows and the cell types of its first data
     row; never a value or a date."""
-    sheets = workbook(content)
+    sheets = workbook(content, item)
     lines = [f"{item}: sheets: {', '.join(sheets)}"]
     for name, sheet in sheets.items():
         rows = sheet.to_numpy(dtype=object).tolist()
@@ -245,9 +250,12 @@ def inspect(fetcher: Fetcher, sources: Sources) -> Inspection:
     failures = 0
     for fund in sources.spdr.funds:
         try:
-            lines += describe(fetcher.get(fund.url).content, fund.holding)
-        except (FetchError, SourceFormatError) as error:
-            lines.append(f"{fund.holding}: {error}")
+            lines += describe(fetcher.get(fund.url).content, fund.series_id)
+        except FetchError as error:
+            lines.append(f"{fund.series_id}: {error}")
+            failures += 1
+        except SourceFormatError as error:
+            lines.append(str(error))
             failures += 1
     return Inspection(lines, failures)
 

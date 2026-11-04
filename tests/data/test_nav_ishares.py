@@ -1,5 +1,6 @@
 """Tests for the iShares fund data adapter on synthetic fixtures (decisions 0013, 0016)."""
 
+import re
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
@@ -22,6 +23,7 @@ from tiferet.data.adapter import Batch, ingest, smoke_lines
 from tiferet.data.cli import main
 from tiferet.data.errors import SourceFormatError
 from tiferet.data.source_config import Sources, load_sources
+from tiferet.data.spreadsheetml import Cell, read_workbook
 from tiferet.data.store import HOLDOUT_START
 
 US_PAGE = "https://www.ishares.com/us/products/239710/ishares-russell-2000-etf"
@@ -184,9 +186,14 @@ def test_cli_smoke(capsys: pytest.CaptureFixture[str]) -> None:
 # Strict parsing -----------------------------------------------------------------------------
 
 
+FUND_ID = re.compile(r"^ishares: ishares_(?:us_)?[a-z0-9_]+_nav: ")
+"""The start of every format error of a fund: the source, then the fund's series id."""
+
+
 def refused(match: str, **files: str) -> None:
-    with pytest.raises(SourceFormatError, match=match):
+    with pytest.raises(SourceFormatError, match=match) as caught:
         collect(responder(**files))
+    assert FUND_ID.match(str(caught.value)), caught.value
 
 
 def test_a_currency_other_than_the_configured_one_is_refused() -> None:
@@ -313,8 +320,9 @@ PAGE = text_fixture("ishares", "page_ucits.html")
 )
 def test_the_fund_data_link_is_checked(page: str, match: str) -> None:
     assert page != PAGE
-    with pytest.raises(SourceFormatError, match=match):
+    with pytest.raises(SourceFormatError, match=match) as caught:
         collect(responder(page=page))
+    assert str(caught.value).startswith("ishares: ishares_nasdaq100_nav: "), caught.value
 
 
 def test_the_same_link_twice_counts_once() -> None:
@@ -347,7 +355,7 @@ def test_the_hosts_come_from_the_configuration() -> None:
     )
     moved = config.ishares.model_copy(update={"data_host": "files.example.org"})
     sources = config.model_copy(update={"ishares": moved})
-    with pytest.raises(SourceFormatError, match=r"not on https://files\.example\.org"):
+    with pytest.raises(SourceFormatError, match=r"_nav: .* not on https://files\.example\.org"):
         nav_ishares.collect(responder(), sources, smoke=False)
 
 
@@ -358,16 +366,21 @@ def test_inspect_prints_structure_and_no_value_or_date() -> None:
     inspection = nav_ishares.inspect(responder(), load_sources())
     assert inspection.failures == 0
     text = "\n".join(inspection.lines)
-    assert "sp500: sheets: Fund Header, Key Facts, Historical NAVs, Holdings" in text
-    assert "sp500: Historical NAVs header rows:\n  row 0: Historische NAVs" in text
-    assert "sp500: Historical NAVs first data row cell types: String, String" in text
-    assert "sp500: Währung der Reihe: USD" in text
+    assert "ishares_sp500_nav: sheets: Fund Header, Key Facts, Historical NAVs, Holdings" in text
+    assert "ishares_sp500_nav: Historical NAVs header rows:\n  row 0: Historische NAVs" in text
+    assert "ishares_sp500_nav: Historical NAVs first data row cell types: String, String" in text
+    assert "ishares_sp500_nav: Währung der Reihe: USD" in text
+    assert "ishares_sp500_nav: bare ampersands escaped: 2" in text
+    assert "ishares_us_iwm_nav: bare ampersands escaped: 2" in text
     assert (
-        "IWM: link https://www.blackrock.com/varnish-api/product-data/api/v1/get-fund-document"
+        "ishares_us_iwm_nav: link https://www.blackrock.com/varnish-api/product-data/api/v1/get-fund-document"
         " with parameters appType, appSubType, targetSite, locale, portfolioId, component, userType"
     ) in text
     assert "row 0: As Of | NAV per Share | Ex-Dividends | Shares Outstanding" in text
-    assert "IWM: Historical first data row cell types: String, Number, String, Number" in text
+    assert (
+        "ishares_us_iwm_nav: Historical first data row cell types: String, Number, String, Number"
+        in text
+    )
     for token in (*UCITS_NAVS, *US_VALUES, *DATES, "2022", "2021", "2017"):
         assert token not in text, token
 
@@ -385,7 +398,9 @@ def test_inspect_reports_a_failed_fund_and_continues() -> None:
 
     inspection = nav_ishares.inspect(broken(), load_sources())
     assert inspection.failures == 1
-    assert inspection.lines[-1].startswith("IWM: ishares: expected one fund data link")
+    assert inspection.lines[-1].startswith(
+        "ishares: ishares_us_iwm_nav: expected one fund data link"
+    )
 
 
 def without_distributions() -> Sources:
@@ -414,3 +429,34 @@ def test_the_data_host_is_compared_without_regard_to_case() -> None:
     page = PAGE.replace(DATA_URL, DATA_URL.replace("www.blackrock.com", "WWW.BlackRock.com"))
     assert page != PAGE
     collect(responder(page=page))
+
+
+# Bare ampersands ----------------------------------------------------------------------------
+
+
+def test_bare_ampersands_in_the_fund_files_are_read_as_written() -> None:
+    batch = collect()
+    assert set(batch.silver["series_id"]) == set(batch.expected)
+    ucits = read_workbook(UCITS_XML.encode("utf-8"), "ishares", "fund").sheets
+    assert ucits["Fund Header"][0] == [Cell("String", "Synthetic Core S&P 500 fixture fund")]
+    assert [
+        Cell("String", "Rating"),
+        Cell("String", "Die Bewertung erfolgt durch S&P, Moody's und Fitch."),
+    ] in ucits["Key Facts"]
+    assert ucits["Holdings"][1][1] == Cell("String", "Fixture & holding\u2019s note\u2019")
+    us = read_workbook(US_XML.encode("utf-8"), "ishares", "fund").sheets
+    assert us["Disclaimers"][1] == [
+        Cell("String", "https://www.example.org/literature#!type=ishares&style=All&view=list")
+    ]
+
+
+@pytest.mark.parametrize("kind", ["ucits", "us"])
+def test_a_file_that_is_not_xml_names_the_fund_and_the_position(kind: str) -> None:
+    series_id = "ishares_nasdaq100_nav" if kind == "ucits" else "ishares_us_iwm_nav"
+    xml = (UCITS_XML if kind == "ucits" else US_XML).replace("</ss:Row>", "</ss:Cell>", 1)
+    pattern = (
+        rf"^ishares: {series_id}: the fund data file is not XML "
+        r"\(mismatched tag: line \d+, column \d+\)$"
+    )
+    with pytest.raises(SourceFormatError, match=pattern):
+        collect(responder(**{f"{kind}_xml": xml}))

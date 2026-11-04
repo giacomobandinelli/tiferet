@@ -125,9 +125,13 @@ def test_smoke_prints_counts_only() -> None:
 # Strict parsing -----------------------------------------------------------------------------
 
 
+SERIES = "spdr_us_energy_nav"
+
+
 def refused(match: str, **parts: object) -> None:
-    with pytest.raises(SourceFormatError, match=match):
+    with pytest.raises(SourceFormatError, match=match) as caught:
         collect(spdr_xlsx(**parts))  # type: ignore[arg-type]
+    assert f"spdr: {SERIES}: " in str(caught.value)
 
 
 @pytest.mark.parametrize(
@@ -187,7 +191,7 @@ def test_a_second_sheet_or_a_renamed_sheet_is_refused() -> None:
 
 
 def test_an_unreadable_file_is_refused() -> None:
-    with pytest.raises(SourceFormatError, match="not a readable spreadsheet"):
+    with pytest.raises(SourceFormatError, match=f"^spdr: {SERIES}: the NAV file is not a readable"):
         collect(b"not a workbook")
 
 
@@ -216,11 +220,14 @@ def test_inspect_prints_structure_and_no_value_or_date() -> None:
     inspection = nav_spdr.inspect(fetcher(), load_sources())
     assert inspection.failures == 0
     text = "\n".join(inspection.lines)
-    assert "us_energy: sheets: navhist" in text
+    assert "spdr_us_energy_nav: sheets: navhist" in text
     assert "row 0: Fund Name: | Synthetic Energy Select Sector Fixture" in text
     assert "row 3: NAV Currency: | USD" in text
     assert "row 5: Date | NAV | Shares Outstanding | Total Net Assets" in text
-    assert "us_energy: navhist first data row cell types: text, number, number, number" in text
+    assert (
+        "spdr_us_energy_nav: navhist first data row cell types: text, number, number, number"
+        in text
+    )
     for token in ("IE00BWBXM492", "2022", "2015", "Dec", "61.84", "60.95", "58.02", "1200000"):
         assert token not in text, token
 
@@ -228,7 +235,7 @@ def test_inspect_prints_structure_and_no_value_or_date() -> None:
 def test_inspect_reports_an_unreadable_file() -> None:
     inspection = nav_spdr.inspect(fetcher(b"<html>"), load_sources())
     assert inspection.failures == 1
-    assert "not a readable spreadsheet" in inspection.lines[0]
+    assert inspection.lines[0].startswith(f"spdr: {SERIES}: the NAV file is not")
 
 
 def test_the_report_date_may_be_a_number_or_a_date_cell() -> None:

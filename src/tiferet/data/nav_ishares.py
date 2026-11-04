@@ -5,7 +5,8 @@ Each product page, on `ishares.page_host`, links to a fund data file through an 
 whose path holds `/product-data/api/v1/get-fund-document`. The file is served by BlackRock,
 which owns iShares, so the link is accepted only on `ishares.data_host` and refused on any
 other host. The link is found on the page at every run and never stored. The file is a
-SpreadsheetML 2003 workbook, read with the standard library XML parser.
+SpreadsheetML 2003 workbook, read with the standard library XML parser after escaping the bare
+ampersands the issuer leaves in its text (see `tiferet.data.spreadsheetml`).
 
 - **UCITS** (German site): sheet "Historical NAVs" holds a title row, then one row of date and
   NAV per day, newest first, then a disclaimer. Dates are German ("26.Okt.2022", "18.Juli2017")
@@ -15,6 +16,9 @@ SpreadsheetML 2003 workbook, read with the standard library XML parser.
   Outstanding" and one row per day. The NAV and the ex-dividend amount per share are stored as
   two series; a zero or missing amount is not stored. Total returns of distributing funds are
   computed later from both.
+
+Every format error names the fund by its series id (`ishares_<holding>_nav` for a UCITS fund,
+`ishares_us_<ticker>_nav` for a US fund).
 
 Every row is `approximated`: a UCITS NAV is known at noon in Berlin on the next TARGET business
 day, a US NAV at 09:00 New York time on the next US business day (config/sources.yaml).
@@ -93,8 +97,8 @@ _GERMAN_NUMBER = re.compile(r"\d{1,3}(?:\.\d{3})+,\d+|\d+(?:,\d+)?")
 # Links ------------------------------------------------------------------------------------
 
 
-def find_link(page: bytes, page_url: str, config: Ishares) -> str:
-    """The absolute URL of the one fund data link on the product page."""
+def find_link(page: bytes, page_url: str, config: Ishares, item: str) -> str:
+    """The absolute URL of the one fund data link on the product page of fund `item`."""
     links = {
         urljoin(page_url, href)
         for href in page_links(page)
@@ -102,18 +106,19 @@ def find_link(page: bytes, page_url: str, config: Ishares) -> str:
     }
     if len(links) != 1:
         raise SourceFormatError(
-            SOURCE, f"expected one fund data link on {page_url}, found {len(links)}"
+            SOURCE, f"{item}: expected one fund data link on {page_url}, found {len(links)}"
         )
     link = links.pop()
     parts = urlsplit(link)
     if parts.scheme != "https" or parts.netloc.lower().rstrip(".") != config.data_host:
         raise SourceFormatError(
-            SOURCE, f"the fund data link on {page_url} is not on https://{config.data_host}"
+            SOURCE,
+            f"{item}: the fund data link on {page_url} is not on https://{config.data_host}",
         )
     names = {name for name, _ in parse_qsl(parts.query, keep_blank_values=True)}
     missing = [name for name in config.link_params if name not in names]
     if missing:
-        raise SourceFormatError(SOURCE, f"the fund data link on {page_url} lacks {missing}")
+        raise SourceFormatError(SOURCE, f"{item}: the fund data link on {page_url} lacks {missing}")
     return link
 
 
@@ -227,8 +232,8 @@ def series_currency(sheets: dict[str, Sheet], config: IsharesUcits, item: str) -
 
 def parse_ucits(content: bytes, config: IsharesUcits, fund: IsharesUcitsFund) -> pd.DataFrame:
     """Rows `obs_date, nav` of a UCITS fund data file, in ascending date order."""
-    item = fund.holding
-    sheets = read_workbook(content, SOURCE)
+    item = fund.series_id
+    sheets = read_workbook(content, SOURCE, item).sheets
     currency = series_currency(sheets, config, item)
     if currency != fund.currency:
         raise SourceFormatError(
@@ -270,8 +275,8 @@ def _distribution(cell: Cell, config: IsharesUs, item: str) -> float:
 
 def parse_us(content: bytes, config: IsharesUs, fund: IsharesUsFund) -> pd.DataFrame:
     """Rows `obs_date, nav, dist` of a US fund data file; `dist` is NaN when missing."""
-    item = fund.ticker
-    sheet = _sheet(read_workbook(content, SOURCE), config.sheet, item)
+    item = fund.nav_series_id
+    sheet = _sheet(read_workbook(content, SOURCE, item).sheets, config.sheet, item)
     start = _header_row(sheet, config.header)
     if start is None:
         raise SourceFormatError(
@@ -345,14 +350,14 @@ def collect(
     for fund in config.ucits.funds:
         page_url = ucits_page(fund, known, config)
         page = fetcher.get(page_url)
-        data = fetcher.get(find_link(page.content, page_url, config))
+        data = fetcher.get(find_link(page.content, page_url, config, fund.series_id))
         frames.append(
             stamp_ucits(parse_ucits(data.content, config.ucits, fund), config.ucits, fund)
         )
         downloads += [page, data]
     for us_fund in config.us.funds:
         page = fetcher.get(us_fund.page_url)
-        data = fetcher.get(find_link(page.content, us_fund.page_url, config))
+        data = fetcher.get(find_link(page.content, us_fund.page_url, config, us_fund.nav_series_id))
         frames += stamp_us(parse_us(data.content, config.us, us_fund), config.us, us_fund)
         downloads += [page, data]
     return Batch(SOURCE, tuple(downloads), combine(frames), expected_series(config))
@@ -389,17 +394,23 @@ def _describe_sheet(sheets: dict[str, Sheet], name: str, item: str) -> list[str]
 def _inspect_fund(
     fetcher: Fetcher, page_url: str, item: str, config: Ishares, sheet_names: list[str]
 ) -> tuple[list[str], dict[str, Sheet]]:
-    link = find_link(fetcher.get(page_url).content, page_url, config)
-    sheets = read_workbook(fetcher.get(link).content, SOURCE)
-    lines = [f"{item}: {_describe_link(link)}", f"{item}: sheets: {', '.join(sheets)}"]
+    link = find_link(fetcher.get(page_url).content, page_url, config, item)
+    workbook = read_workbook(fetcher.get(link).content, SOURCE, item)
+    sheets = workbook.sheets
+    lines = [
+        f"{item}: {_describe_link(link)}",
+        f"{item}: bare ampersands escaped: {workbook.escaped_ampersands}",
+        f"{item}: sheets: {', '.join(sheets)}",
+    ]
     for name in sheet_names:
         lines += _describe_sheet(sheets, name, item)
     return lines, sheets
 
 
 def inspect(fetcher: Fetcher, sources: Sources, holdings: Holdings | None = None) -> Inspection:
-    """Per fund: the link without its values, the sheet names, the header rows of the NAV
-    sheet and the cell types of its first data row; for UCITS funds, the series currency."""
+    """Per fund, named by its series id: the link without its values, the number of bare
+    ampersands escaped, the sheet names, the header rows of the NAV sheet and the cell types
+    of its first data row; for UCITS funds, the series currency."""
     config = sources.ishares
     known = load_holdings() if holdings is None else holdings
     lines: list[str] = []
@@ -408,22 +419,28 @@ def inspect(fetcher: Fetcher, sources: Sources, holdings: Holdings | None = None
         try:
             page = ucits_page(fund, known, config)
             found, sheets = _inspect_fund(
-                fetcher, page, fund.holding, config, [config.ucits.nav_sheet]
+                fetcher, page, fund.series_id, config, [config.ucits.nav_sheet]
             )
             lines += found
-            currency = series_currency(sheets, config.ucits, fund.holding)
-            lines.append(f"{fund.holding}: {config.ucits.currency_label}: {currency}")
-        except (FetchError, SourceFormatError) as error:
-            lines.append(f"{fund.holding}: {error}")
+            currency = series_currency(sheets, config.ucits, fund.series_id)
+            lines.append(f"{fund.series_id}: {config.ucits.currency_label}: {currency}")
+        except FetchError as error:
+            lines.append(f"{fund.series_id}: {error}")
+            failures += 1
+        except SourceFormatError as error:
+            lines.append(str(error))
             failures += 1
     for us_fund in config.us.funds:
         try:
             found, _ = _inspect_fund(
-                fetcher, us_fund.page_url, us_fund.ticker, config, [config.us.sheet]
+                fetcher, us_fund.page_url, us_fund.nav_series_id, config, [config.us.sheet]
             )
             lines += found
-        except (FetchError, SourceFormatError) as error:
-            lines.append(f"{us_fund.ticker}: {error}")
+        except FetchError as error:
+            lines.append(f"{us_fund.nav_series_id}: {error}")
+            failures += 1
+        except SourceFormatError as error:
+            lines.append(str(error))
             failures += 1
     return Inspection(lines, failures)
 
