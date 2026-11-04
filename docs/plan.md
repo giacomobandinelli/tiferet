@@ -103,7 +103,7 @@ Signals draw on a much wider universe than the holdings: several hundred series,
 - FX, including the dollar index and EUR/USD.
 - Commodities: oil, copper, gold, silver, broad indices.
 - Volatility indices (VIX and term structure).
-- Crypto: daily price, volume and market capitalization for BTC, ETH, the largest coins and the main stablecoins.
+- Crypto: daily price and market capitalization for BTC, ETH and the coins that were among the largest at the time (volume where a free source has it), the USDT and USDC market caps, and survivorship-free crypto market, size and momentum factors.
 - Macro: growth, inflation, labour, credit, financial-conditions and stress indices, used as published at the time.
 
 ### 3.3 Feature definitions
@@ -120,7 +120,7 @@ Every feature is computed point in time: on date *t* it uses only data published
 | MA rejection | A touch from below after which the close stays below the MA for the next k days (k = 3) |
 | MA cross | The close moves from one side of the MA to the other |
 | Ratios to gold and to the S&P 500 | For every asset, P_asset / P_gold and P_asset / P_S&P500 in a common currency; all features above are also computed on these ratios |
-| BTC dominance ex-stablecoins | BTC market cap / (total crypto market cap − market cap of the largest stablecoins). The stablecoin set (e.g. USDT, USDC and the next largest by market cap) is defined point in time. A falling value typically marks euphoric phases |
+| BTC-to-stablecoin ratio | BTC market cap / (USDT market cap + USDC market cap). A stablecoin enters the sum from its first available value, and the number of stablecoins in the sum is recorded with the ratio; the ratio starts when BTC and at least one stablecoin are available. Its relation to cycle phases is tested, not assumed (decision 0017) |
 | Time-series momentum | Cumulative return over 1, 3, 6 and 12 months; the 12-month version skips the latest month (12-1) |
 | Risk-adjusted momentum | Momentum divided by realized volatility over the same window |
 | Cross-sectional momentum | Rank of each asset's momentum within its group |
@@ -152,7 +152,7 @@ Every feature is computed point in time: on date *t* it uses only data published
 | Yield-curve slope | 10y − 2y and 10y − 3m spreads, their level and 3-month change |
 | Curve inversion and re-steepening | Days since the curve inverted; re-steepening after an inversion, which has historically come close to downturns |
 | Blow-off moves | Upside move z-scores of the risk leader above a threshold, plus acceleration of its price (parabolic advance), signalling euphoric late-cycle phases |
-| Breadth divergence | The S&P 500 at new highs while equal-weight/cap-weight, S&P 500/gold or BTC dominance ex-stablecoins fall |
+| Breadth divergence | The S&P 500 at new highs while equal-weight/cap-weight, S&P 500/gold or the BTC-to-stablecoin ratio fall |
 | Late-cycle leadership | Relative strength of energy and commodities against the broad market |
 
 Candidate signals proposed during research (for example Nasdaq/BTC and gold/BTC relative strength, BTC realized price, Kronos forecast dispersion) enter through the same protocol as any other idea: pre-registered, logged and tested walk-forward.
@@ -282,7 +282,7 @@ All sources are free. Licences and download limits are checked when each adapter
 | Macro and rates | FRED and ALFRED (vintages), ECB Data Portal (yield curves, €STR, reference rates), Eurostat, OECD, BIS | Cycle-phase model, rate and stress signals |
 | Long histories | Shiller data (S&P 500 since 1871), Kenneth French data library (since 1926) | Benchmark history, dynamic ladder |
 | Commodities | World Bank Pink Sheet, FRED (WTI), ETC issuer NAV files | Commodity holdings and signals |
-| Crypto | CoinGecko and Coin Metrics community data: daily price, volume, market capitalization; stablecoin market caps | Crypto holdings, BTC dominance ex-stablecoins, crypto signals |
+| Crypto | Coin Metrics Community data (daily price and market capitalization), DefiLlama (USDT and USDC market caps), Open Crypto Pricing (survivorship-free crypto factor returns) | Crypto holdings, BTC-to-stablecoin ratio, crypto market return, crypto signals |
 | Volatility | Cboe indices through FRED: VIX, 3-month VIX, oil, gold and emerging-markets volatility (Cboe-copyrighted, decision 0016) | Stress signals |
 | Instrument master | OpenFIGI, ISIN and ticker lists | Linking each UCITS ETF to its index, proxy and tax class |
 
@@ -292,13 +292,13 @@ Stooq is not used: its downloads require an API key since March 2026 and its ter
 
 **EUR overnight holding.** The Xtrackers II EUR Overnight Rate Swap UCITS ETF has no adapter. It tracks the Solactive €STR +8.5 Daily Total Return Index and its download requires accepting a gate, so its return is modelled as €STR (ECB adapter) plus 8.5 basis points a year minus the TER (decision 0014).
 
-**BTC dominance ex-stablecoins** needs complete histories of total crypto market capitalization and of stablecoin market capitalization. Sources, in order of preference:
+**Crypto.** No free, licensed history of total crypto market capitalization exists, so BTC dominance is not computed; the BTC-to-stablecoin ratio replaces it (decision 0017). Sources:
 
-1. CoinMarketCap historical snapshots: weekly listings of every coin with its market cap since April 2013, giving total market cap and stablecoin caps from one consistent source.
-2. DefiLlama stablecoins API: daily circulating supply of every stablecoin, free and complete since stablecoins emerged.
-3. CoinGecko and CoinMetrics community data: daily BTC and large-coin market caps to fill weekly gaps and cross-check.
+1. Coin Metrics Community data (CC BY-NC 4.0): daily price and market capitalization of BTC, ETH and the coins that were among the largest at the time, for the candidate pools of §3.5. Coins that were large and later died may be missing.
+2. DefiLlama stablecoins API: daily circulating USDT and USDC, valued at the peg.
+3. Open Crypto Pricing (Stoeckl and Pukrop, CC BY 4.0): survivorship-free crypto market, size and momentum factors from 30 December 2013, daily, weekly and monthly. Its market factor is the reference for the crypto market return.
 
-Each source's terms of use are checked before an adapter is built; where two sources overlap, their difference is measured and reported.
+CoinGecko is deferred to a later nightly cross-check. Each source's terms are checked before its adapter is built and recorded in decision 0014; where two sources overlap, their difference is measured and reported.
 
 ### 5.2 Storage model
 

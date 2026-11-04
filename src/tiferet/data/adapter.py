@@ -6,18 +6,20 @@ silver tables and, only after they are written, appends the bronze manifest, so 
 error or a data-loss refusal leaves both untouched.
 """
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import numpy as np
 import pandas as pd
 
 from tiferet.data import bronze
-from tiferet.data.errors import DataLossError
+from tiferet.data.errors import DataLossError, SourceFormatError
 from tiferet.data.fetch import Download, Fetcher
 from tiferet.data.schema import (
+    APPROXIMATED,
     KNOWN_AT,
     KNOWN_AT_DTYPE,
     OBS_DATE,
@@ -30,6 +32,7 @@ from tiferet.data.schema import (
 from tiferet.data.silver import SilverRoots, Written, split_by_series, write_silver
 from tiferet.data.source_config import Sources
 from tiferet.data.store import is_holdout
+from tiferet.data.timing import known_after_utc_day
 
 
 def stamped(
@@ -50,6 +53,30 @@ def stamped(
         }
     )
     return frame.reset_index(drop=True)
+
+
+def stamped_utc_days(series_id: str, values: pd.Series, lag_hours: int) -> pd.DataFrame:
+    """A silver frame of daily values indexed by naive UTC day, each known at 00:00 UTC on
+    the next day plus `lag_hours` (decision 0013). Every row is `approximated`."""
+    obs = pd.Series(values.index, index=range(len(values)))
+    return stamped(
+        series_id,
+        obs,
+        known_after_utc_day(obs, lag_hours),
+        pd.Series(values.to_numpy(dtype=float)),
+        APPROXIMATED,
+    )
+
+
+def json_object(content: bytes, source: str, item: str) -> dict[str, Any]:
+    """A response body that must be a JSON object; anything else is a format error."""
+    try:
+        parsed = json.loads(content)
+    except (ValueError, UnicodeDecodeError):
+        raise SourceFormatError(source, f"{item}: response is not JSON") from None
+    if not isinstance(parsed, dict):
+        raise SourceFormatError(source, f"{item}: response is not a JSON object")
+    return parsed
 
 
 def combine(frames: Sequence[pd.DataFrame]) -> pd.DataFrame:

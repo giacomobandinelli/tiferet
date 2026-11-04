@@ -62,18 +62,21 @@ def main(
     argv: Sequence[str] | None = None,
     *,
     inspect: Inspect | None = None,
-    fetcher: Callable[[], Fetcher] = HttpFetcher,
+    fetcher: Callable[[], Fetcher] | None = None,
     sources: Callable[[], Sources] = load_sources,
 ) -> int:
+    """Run one action. Without `fetcher`, an `HttpFetcher` spaces requests to each host by
+    the interval its source configures."""
     args = _parser(source).parse_args(argv)
     config = sources()
+    make_fetcher = fetcher or (lambda: HttpFetcher(host_intervals=config.host_intervals()))
     if args.inspect:
         if inspect is None:
             raise SystemExit(f"{source} has no inspect mode")
-        inspection = inspect(fetcher(), config)
+        inspection = inspect(make_fetcher(), config)
         print("\n".join(inspection.lines))
         return 1 if inspection.failures else 0
-    batch = collect(fetcher(), config, smoke=args.smoke)
+    batch = collect(make_fetcher(), config, smoke=args.smoke)
     if args.smoke:
         print("\n".join(smoke_lines(batch)))
         return 0

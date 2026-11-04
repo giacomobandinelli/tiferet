@@ -58,6 +58,8 @@ class FredSeries(_Model):
 
 
 class Fred(_Model):
+    attribution: str = Field(min_length=1)
+    """Credit carried by every published result derived from this source (decision 0016)."""
     api_url: HttpsUrl
     api_key_env: str = Field(pattern=r"^[A-Z][A-Z0-9_]*$")
     no_vintage_errors: Sourced[tuple[str, ...]]
@@ -104,6 +106,8 @@ class ShillerSeries(_Model):
 
 
 class Shiller(_Model):
+    attribution: str = Field(min_length=1)
+    """Credit carried by every published result derived from this source (decision 0016)."""
     page_url: HttpsUrl
     link_name: str = Field(pattern=r"^[A-Za-z0-9_.\-]+$")
     sheet: str = Field(min_length=1)
@@ -182,6 +186,8 @@ class FrenchFile(_Model):
 
 
 class French(_Model):
+    attribution: str = Field(min_length=1)
+    """Credit carried by every published result derived from this source (decision 0016)."""
     base_url: HttpsUrl
     publication_lag_days: Parameter[int]
     files: tuple[FrenchFile, ...] = Field(min_length=1)
@@ -213,6 +219,8 @@ class EcbDataset(_Model):
 
 
 class Ecb(_Model):
+    attribution: str = Field(min_length=1)
+    """Credit carried by every published result derived from this source (decision 0016)."""
     api_url: HttpsUrl
     datasets: tuple[EcbDataset, ...] = Field(min_length=1)
 
@@ -294,6 +302,8 @@ Host = Annotated[str, Field(pattern=r"^[a-z0-9]+(?:[.\-][a-z0-9]+)+$")]
 
 
 class Ishares(_Model):
+    attribution: str = Field(min_length=1)
+    """Credit carried by every published result derived from this source (decision 0016)."""
     page_host: Host
     """Host of every product page; a page on any other host is refused."""
     data_host: Host
@@ -362,9 +372,170 @@ class SpdrFund(_Model):
 
 
 class Spdr(_Model):
+    attribution: str = Field(min_length=1)
+    """Credit carried by every published result derived from this source (decision 0016)."""
     publication: Parameter[NavPublication]
     layout: SpdrLayout
     funds: tuple[SpdrFund, ...] = Field(min_length=1)
+
+
+MetricName = Annotated[str, Field(pattern=r"^[A-Za-z0-9_]+$")]
+AssetKey = Annotated[str, Field(pattern=r"^[a-z0-9]+$")]
+
+
+def _positive(parameter: Parameter[Decimal], name: str) -> None:
+    if parameter.value <= 0:
+        raise ValueError(f"{name} must be positive")
+
+
+class CoinMetricsMetrics(_Model):
+    """Community metric names: price, market cap and the supply used when the cap is not free."""
+
+    price: MetricName
+    cap: MetricName
+    supply: MetricName
+
+    @model_validator(mode="after")
+    def _distinct(self) -> Self:
+        if len({self.price, self.cap, self.supply}) != 3:
+            raise ValueError("price, cap and supply metrics must be distinct")
+        return self
+
+
+class CoinMetrics(_Model):
+    attribution: str = Field(min_length=1)
+    """Credit carried by every published result derived from this source (decision 0016)."""
+    api_url: HttpsUrl
+    request_interval_seconds: Parameter[Decimal]
+    publication_lag_hours: Parameter[int]
+    forbidden_error_type: Sourced[str]
+    """`error.type` of the answer to a metric not available without a key."""
+    metrics: CoinMetricsMetrics
+    probe_metrics: tuple[MetricName, ...] = ()
+    """Metrics `--inspect` reports on that are not ingested, such as candidate volume metrics."""
+    assets: Sourced[tuple[AssetKey, ...]]
+
+    @model_validator(mode="after")
+    def _checks(self) -> Self:
+        _positive(self.request_interval_seconds, "request_interval_seconds")
+        _non_negative(self.publication_lag_hours, "publication_lag_hours")
+        assets = self.assets.value
+        if not assets or len(set(assets)) != len(assets):
+            raise ValueError("assets must be a non-empty list without repeats")
+        return self
+
+    @staticmethod
+    def price_series_id(asset: str) -> str:
+        return f"cm_{asset}_price_usd"
+
+    @staticmethod
+    def cap_series_id(asset: str) -> str:
+        return f"cm_{asset}_cap_usd"
+
+    def series_ids(self) -> tuple[str, ...]:
+        return tuple(
+            i for a in self.assets.value for i in (self.price_series_id(a), self.cap_series_id(a))
+        )
+
+
+class Stablecoin(_Model):
+    symbol: str = Field(pattern=r"^[A-Z]+$")
+    llama_id: str = Field(pattern=r"^[0-9]+$")
+    """DefiLlama's stablecoin id, the `{asset}` of `/stablecoin/{asset}`."""
+
+    @property
+    def series_id(self) -> str:
+        return f"defillama_{self.symbol.lower()}_cap_usd"
+
+
+class DefiLlamaLayout(_Model):
+    """Keys of a `/stablecoin/{asset}` answer: the history list, each item's date (unix
+    seconds) and the path to its circulating amount in pegged US dollars."""
+
+    symbol_key: str = Field(min_length=1)
+    history_key: str = Field(min_length=1)
+    date_key: str = Field(min_length=1)
+    value_path: tuple[str, ...] = Field(min_length=1)
+
+
+class DefiLlama(_Model):
+    attribution: str = Field(min_length=1)
+    """Credit carried by every published result derived from this source (decision 0016)."""
+    api_url: HttpsUrl
+    request_interval_seconds: Parameter[Decimal]
+    publication_lag_hours: Parameter[int]
+    layout: Sourced[DefiLlamaLayout]
+    stablecoins: Sourced[tuple[Stablecoin, ...]]
+
+    @model_validator(mode="after")
+    def _checks(self) -> Self:
+        _positive(self.request_interval_seconds, "request_interval_seconds")
+        _non_negative(self.publication_lag_hours, "publication_lag_hours")
+        coins = self.stablecoins.value
+        if not coins:
+            raise ValueError("stablecoins must not be empty")
+        for field in ("symbol", "llama_id"):
+            values = [getattr(c, field) for c in coins]
+            if len(set(values)) != len(values):
+                raise ValueError(f"stablecoin {field} values repeat")
+        return self
+
+
+class OcpFrequency(StrEnum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
+class ReturnUnits(StrEnum):
+    DECIMAL = "decimal"
+    PERCENT = "percent"
+
+
+class OcpFile(_Model):
+    """One Open Crypto Pricing factor file: its path under `ocp.base_url`, its date columns
+    (one, or week start and end for the weekly file) and its value columns in order."""
+
+    path: str = Field(pattern=r"^[a-z0-9_]+(/[a-z0-9_]+)*\.csv$")
+    frequency: OcpFrequency
+    date_columns: tuple[str, ...] = Field(min_length=1, max_length=2)
+    columns: tuple[str, ...] = Field(min_length=1)
+    count_columns: tuple[str, ...] = ()
+    """Columns holding counts (non-negative integers), stored as they are."""
+    return_units: ReturnUnits
+
+    @model_validator(mode="after")
+    def _shape(self) -> Self:
+        names = [*self.date_columns, *self.columns]
+        if len(set(names)) != len(names) or not all(re.fullmatch(r"[A-Za-z_]+", n) for n in names):
+            raise ValueError("OCP columns must be distinct names of letters and underscores")
+        if (self.frequency is OcpFrequency.WEEKLY) != (len(self.date_columns) == 2):
+            raise ValueError("the weekly file has a start and an end column; others have one")
+        if not set(self.count_columns) <= set(self.columns):
+            raise ValueError("count_columns must be among columns")
+        return self
+
+    def series_id(self, column: str) -> str:
+        """`ocp_cg_<column>_<d|w|m>`, for example `ocp_cg_cmkt_w`."""
+        return f"ocp_cg_{column.lower()}_{self.frequency.value[0]}"
+
+    def series_ids(self) -> tuple[str, ...]:
+        return tuple(self.series_id(c) for c in self.columns)
+
+
+class Ocp(_Model):
+    attribution: str = Field(min_length=1)
+    """Credit carried by every published result derived from this source (decision 0016)."""
+    base_url: HttpsUrl
+    publication_lag_days: Parameter[int]
+    files: Sourced[tuple[OcpFile, ...]]
+
+    @model_validator(mode="after")
+    def _checks(self) -> Self:
+        _non_negative(self.publication_lag_days, "publication_lag_days")
+        if not self.files.value:
+            raise ValueError("files must not be empty")
+        return self
 
 
 class Sources(_Model):
@@ -375,6 +546,9 @@ class Sources(_Model):
     ecb: Ecb
     ishares: Ishares
     spdr: Spdr
+    coinmetrics: CoinMetrics
+    defillama: DefiLlama
+    ocp: Ocp
 
     def series_ids(self) -> list[str]:
         """Every silver series id the configuration produces."""
@@ -386,7 +560,29 @@ class Sources(_Model):
             *(f.series_id for f in self.ishares.ucits.funds),
             *(i for f in self.ishares.us.funds for i in f.series_ids()),
             *(f.series_id for f in self.spdr.funds),
+            *self.coinmetrics.series_ids(),
+            *(c.series_id for c in self.defillama.stablecoins.value),
+            *(i for f in self.ocp.files.value for i in f.series_ids()),
         ]
+
+    def attributions(self) -> dict[str, str]:
+        """The credit of every source, by its section name in config/sources.yaml."""
+        return {
+            name: getattr(self, name).attribution
+            for name in type(self).model_fields
+            if name != "silver"
+        }
+
+    def host_intervals(self) -> dict[str, float]:
+        """Minimum seconds between requests to a host, where a source configures one."""
+        return {
+            urlsplit(self.coinmetrics.api_url).netloc: float(
+                self.coinmetrics.request_interval_seconds.value
+            ),
+            urlsplit(self.defillama.api_url).netloc: float(
+                self.defillama.request_interval_seconds.value
+            ),
+        }
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:

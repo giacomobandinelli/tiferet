@@ -243,3 +243,65 @@ def test_a_us_product_page_must_be_on_the_page_host() -> None:
     ishares = load_sources().ishares
     with pytest.raises(ValidationError, match=r"IWM is not on www\.example\.org"):
         type(ishares).model_validate({**ishares.model_dump(), "page_host": "www.example.org"})
+
+
+def test_every_source_carries_an_attribution() -> None:
+    sections = [name for name in RAW if name != "silver"]
+    assert sections == list(load_sources().attributions())
+    for name in sections:
+        assert isinstance(RAW[name].get("attribution"), str), name
+        assert RAW[name]["attribution"].strip(), name
+
+
+@pytest.mark.parametrize("section", [name for name in RAW if name != "silver"])
+def test_a_source_without_attribution_is_refused(section: str) -> None:
+    raw = read_yaml(CONFIG_DIR / SOURCES_FILE)
+    del raw[section]["attribution"]
+    with pytest.raises(ValidationError, match="attribution"):
+        Sources.model_validate(raw)
+
+
+def test_licensed_sources_name_their_licence() -> None:
+    credits = load_sources().attributions()
+    assert "CC BY-NC 4.0" in credits["coinmetrics"]
+    assert "CC BY 4.0" in credits["ocp"] and "Stoeckl and Pukrop" in credits["ocp"]
+    assert "not endorsed or certified" in credits["fred"]
+    assert credits["ecb"] == "Source: ECB statistics"
+
+
+def test_crypto_series_ids() -> None:
+    config = load_sources()
+    ids = set(config.series_ids())
+    assert {"cm_btc_price_usd", "cm_btc_cap_usd", "cm_eth_cap_usd"} <= ids
+    assert {"defillama_usdt_cap_usd", "defillama_usdc_cap_usd"} <= ids
+    assert {"ocp_cg_cmkt_d", "ocp_cg_cmkt_w", "ocp_cg_n_coins_m"} <= ids
+    assert config.host_intervals() == {
+        "community-api.coinmetrics.io": 0.7,
+        "api.llama.fi": 1.0,
+    }
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        (("coinmetrics", "assets", "value"), ["btc", "btc"], "without repeats"),
+        (("coinmetrics", "assets", "value"), ["BTC"], "String should match"),
+        (("coinmetrics", "request_interval_seconds", "value"), 0, "must be positive"),
+        (("coinmetrics", "publication_lag_hours", "value"), -1, "cannot be negative"),
+        (("coinmetrics", "metrics", "supply"), "PriceUSD", "must be distinct"),
+        (("defillama", "stablecoins", "value", 1, "symbol"), "USDT", "symbol values repeat"),
+        (("defillama", "stablecoins", "value", 1, "llama_id"), "1", "llama_id values repeat"),
+        (("defillama", "stablecoins", "value"), [], "must not be empty"),
+        (("ocp", "files", "value", 0, "date_columns"), ["a", "b"], "start and an end"),
+        (("ocp", "files", "value", 1, "date_columns"), ["week_start"], "start and an end"),
+        (("ocp", "files", "value", 0, "count_columns"), ["x"], "among columns"),
+        (("ocp", "files", "value", 0, "columns"), ["CMKT", "CMKT"], "distinct names"),
+        (("ocp", "files", "value", 0, "path"), "../x.csv", "String should match"),
+        (("ocp", "files", "value"), [], "must not be empty"),
+    ],
+)
+def test_inconsistent_crypto_configuration_is_refused(
+    path: tuple[str | int, ...], value: Any, message: str
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        Sources.model_validate(edited(path, value))

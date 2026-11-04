@@ -171,4 +171,7 @@ uv run python -m tiferet.data.french --smoke
 uv run python -m tiferet.data.shiller --smoke
 uv run python -m tiferet.data.nav_ishares --smoke
 uv run python -m tiferet.data.nav_spdr --smoke
+uv run python -m tiferet.data.coinmetrics --smoke
+uv run python -m tiferet.data.defillama --smoke
+uv run python -m tiferet.data.ocp --smoke
 ```

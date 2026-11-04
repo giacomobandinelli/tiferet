@@ -1,7 +1,8 @@
 """HTTP fetch layer shared by the adapters (decision 0013).
 
 `HttpFetcher` adds a timeout, bounded retries with exponential backoff, a minimum interval
-between requests to one host and an identifying User-Agent. A body cut short, by a dropped
+between requests to one host (`min_interval`, or a host's own entry in `host_intervals`) and
+an identifying User-Agent. A body cut short, by a dropped
 connection or against its Content-Length, is retried like any transient failure. A failed
 download's error names the server's own error text (truncated), the reason of a connection
 failure, the redirect chain and the final status. API keys are read from the environment by
@@ -140,7 +141,11 @@ def redact_text(text: str, secrets: Iterable[str]) -> str:
 
 
 def server_text(error: urllib.error.HTTPError) -> str:
-    """The error text of an HTTP error body: `error_message` of a JSON body, else the body."""
+    """The error text of an HTTP error body.
+
+    `error_message` of a JSON body (FRED), `<type>: <message>` of a JSON body holding an
+    `error` object (Coin Metrics), else the body.
+    """
     try:
         body = error.read(MAX_ERROR_BODY) if error.fp is not None else b""
     except (OSError, http.client.HTTPException):
@@ -152,6 +157,9 @@ def server_text(error: urllib.error.HTTPError) -> str:
         return text
     if isinstance(parsed, dict) and isinstance(parsed.get("error_message"), str):
         return str(parsed["error_message"])
+    nested = parsed.get("error") if isinstance(parsed, dict) else None
+    if isinstance(nested, dict) and isinstance(nested.get("type"), str):
+        return f"{nested['type']}: {nested.get('message', '')}"
     return text
 
 
@@ -197,6 +205,7 @@ class HttpFetcher:
         attempts: int = 4,
         backoff: float = 2.0,
         min_interval: float = 1.0,
+        host_intervals: Mapping[str, float] | None = None,
         max_bytes: int = MAX_BYTES,
         opener: Opener | None = None,
         redirect_log: RedirectLog | None = None,
@@ -207,6 +216,7 @@ class HttpFetcher:
             raise ValueError("attempts must be at least 1")
         self._timeout, self._attempts, self._backoff = timeout, attempts, backoff
         self._min_interval, self._max_bytes = min_interval, max_bytes
+        self._host_intervals = dict(host_intervals or {})
         if opener is None:
             self._redirects: RedirectLog | None = redirect_log or RedirectLog()
             self._opener: Opener = urllib.request.build_opener(
@@ -262,7 +272,8 @@ class HttpFetcher:
     def _wait_for_host(self, host: str) -> None:
         last = self._last_request.get(host)
         if last is not None:
-            remaining = self._min_interval - (self._clock() - last)
+            interval = self._host_intervals.get(host, self._min_interval)
+            remaining = interval - (self._clock() - last)
             if remaining > 0:
                 self._sleep(remaining)
         self._last_request[host] = self._clock()

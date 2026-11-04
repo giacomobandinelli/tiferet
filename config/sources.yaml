@@ -26,6 +26,9 @@ silver:
       dropped.
 
 fred:
+  attribution: >-
+    This product uses the FRED® API but is not endorsed or certified by the Federal Reserve
+    Bank of St. Louis.
   api_url: https://api.stlouisfed.org/fred/series/observations
   api_key_env: FRED_API_KEY
   no_vintage_errors:
@@ -250,6 +253,7 @@ fred:
           day of margin is added, as for the Nasdaq indices.
 
 shiller:
+  attribution: Robert J. Shiller, shillerdata.com
   page_url: https://shillerdata.com/
   link_name: ie_data.xls
   sheet: Data
@@ -338,6 +342,7 @@ shiller:
           yields, which can only delay known_at.
 
 french:
+  attribution: Kenneth R. French Data Library
   base_url: https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/
   publication_lag_days:
     value: 90
@@ -439,6 +444,7 @@ french:
       market_return: true
 
 ecb:
+  attribution: "Source: ECB statistics"
   api_url: https://data-api.ecb.europa.eu/service/data
   datasets:
     - flow: YC
@@ -491,6 +497,7 @@ ecb:
 # only: raw values are never published, committed or exported. NAVs are stored in the
 # currency of the series and converted to EUR later with ECB reference rates.
 ishares:
+  attribution: "NAV data: iShares"
   # Product pages are on page_host. Their fund data links are absolute and point to data_host
   # (BlackRock owns iShares), as the owner observed on 2026-11-02. A page on another host, or
   # a link on any host but data_host, is refused. Hosts are identity configuration.
@@ -546,6 +553,7 @@ ishares:
       - {ticker: IWM, page_url: "https://www.ishares.com/us/products/239710/ishares-russell-2000-etf", currency: USD}
 
 spdr:
+  attribution: "NAV data: SPDR"
   publication:
     value: {business_days_after: 1, time: "12:00"}
     unit: target_business_days_after_nav_date_and_berlin_time
@@ -573,3 +581,144 @@ spdr:
     - holding: us_energy
       url: https://www.ssga.com/de/de/intermediary/library-content/products/fund-data/etfs/emea/navhist-emea-en-zpde-gy.xlsx
       currency: USD
+
+# Crypto sources (plan §5.1; decisions 0013, 0014, 0016, 0017). No agent downloads from them;
+# the owner runs --inspect and --smoke. Values for UTC day d are taken to be known at 00:00
+# UTC on d + 1 plus publication_lag_hours.
+coinmetrics:
+  attribution: Coin Metrics Community Data, CC BY-NC 4.0
+  # The OpenAPI specification lists this host as the community server, which needs no key.
+  # The Community Data page names https://api.coinmetrics.io/v4 instead; --inspect shows
+  # which one answers.
+  api_url: https://community-api.coinmetrics.io/v4
+  request_interval_seconds:
+    value: 0.7
+    unit: seconds_between_requests_to_the_host
+    source_url: https://gitbook-docs.coinmetrics.io/packages/coin-metrics-community-data.md
+    checked_on: 2026-11-04
+    verified: true
+    note: >-
+      "10 requests per 6 seconds sliding window for an IP address" allows one request every
+      0.6 seconds; 0.1 seconds of margin is added. A 429 is retried after its Retry-After.
+  publication_lag_hours:
+    value: 24
+    unit: hours_after_the_end_of_the_utc_day
+    source_url: https://gitbook-docs.coinmetrics.io/packages/coin-metrics-community-data.md
+    checked_on: 2026-11-04
+    verified: false
+    reason: >-
+      Coin Metrics does not state when daily community values are published. Network
+      metrics are computed after the UTC day closes; one further day is taken as a
+      conservative approximation.
+  forbidden_error_type:
+    value: forbidden
+    source_url: https://docs.coinmetrics.io/api-explorer/openapi.json
+    checked_on: 2026-11-04
+    verified: true
+    note: >-
+      The specification answers a metric that is "not available with supplied credentials"
+      with HTTP 403 and error type "forbidden", and says to identify errors by type, not by
+      message.
+  metrics:
+    price: PriceUSD
+    cap: CapMrktCurUSD
+    supply: SplyCur
+  # Reported by --inspect only; a volume series is configured once one is shown to be free.
+  probe_metrics: [volume_reported_spot_usd_1d, volume_trusted_spot_usd_1d]
+  assets:
+    value: [btc, eth, xrp, ltc, bch, ada, bnb, doge, sol, dot, trx, xlm, eos, xmr, dash, etc,
+      xem, link, matic, avax]
+    source_url: https://gitbook-docs.coinmetrics.io/packages/coin-metrics-community-data.md
+    checked_on: 2026-11-04
+    verified: false
+    reason: >-
+      Drafted from general knowledge of the coins that were among the largest by market
+      cap since 2013, for the point-in-time candidate pools of plan section 3.5; no source
+      listing them was read, because pages showing market caps display current values. The
+      owner confirms the list against a source, and --inspect shows which assets Coin
+      Metrics covers. Coins that were large and later died may be missing (decision 0014).
+
+defillama:
+  attribution: DefiLlama
+  api_url: https://api.llama.fi
+  request_interval_seconds:
+    value: 1.0
+    unit: seconds_between_requests_to_the_host
+    source_url: https://api-docs.defillama.com/llms-free.txt
+    checked_on: 2026-11-04
+    verified: false
+    reason: The free API states no rate limit; one request a second is a polite interval.
+  publication_lag_hours:
+    value: 24
+    unit: hours_after_the_end_of_the_utc_day
+    source_url: https://api-docs.defillama.com/llms-free.txt
+    checked_on: 2026-11-04
+    verified: false
+    reason: >-
+      DefiLlama does not state when a day's circulating amount is recorded; one further day
+      after the UTC day is taken as a conservative approximation.
+  layout:
+    value:
+      symbol_key: symbol
+      history_key: tokens
+      date_key: date
+      value_path: [circulating, peggedUSD]
+    source_url: https://api-docs.defillama.com/llms-free.txt
+    checked_on: 2026-11-04
+    verified: false
+    reason: >-
+      The documentation gives no response schema for /stablecoin/{asset}. The keys are
+      assumed from the API's known form and are confirmed by the owner's --inspect run,
+      which prints the keys without values.
+  stablecoins:
+    value:
+      - {symbol: USDT, llama_id: "1"}
+      - {symbol: USDC, llama_id: "2"}
+    source_url: https://api-docs.defillama.com/llms-free.txt
+    checked_on: 2026-11-04
+    verified: false
+    reason: >-
+      Ids come from /stablecoins, which an agent may not fetch; each answer's symbol must
+      equal the configured one, so a wrong id fails the run.
+
+ocp:
+  attribution: Open Crypto Asset Pricing, Stoeckl and Pukrop, CC BY 4.0, opencryptopricing.com
+  base_url: https://opencryptopricing.com/data/
+  publication_lag_days:
+    value: 14
+    unit: days_after_end_of_observation_period
+    source_url: https://opencryptopricing.com/download.html
+    checked_on: 2026-11-04
+    verified: false
+    reason: >-
+      The files are updated weekly on Mondays, but the page does not say whether an update
+      includes the week just ended. Two weekly cycles after the period's end, at 23:59:59
+      UTC, is a conservative approximation. The full history may be recomputed at any
+      update, so stored values are those of the latest download.
+  files:
+    value:
+      - path: daily/factors_cg_investable_daily.csv
+        frequency: daily
+        date_columns: [date]
+        columns: [CMKT, CSIZE, CMOM, RF, n_coins]
+        count_columns: [n_coins]
+        return_units: decimal
+      - path: factors_cg_investable.csv
+        frequency: weekly
+        date_columns: [week_start, week_end]
+        columns: [CMKT, CSIZE, CMOM, RF, n_coins]
+        count_columns: [n_coins]
+        return_units: decimal
+      - path: monthly/factors_cg_investable_monthly.csv
+        frequency: monthly
+        date_columns: [month]
+        columns: [CMKT, CSIZE, CMOM, RF, n_coins]
+        count_columns: [n_coins]
+        return_units: decimal
+    source_url: https://opencryptopricing.com/download.html
+    checked_on: 2026-11-04
+    verified: false
+    reason: >-
+      The weekly columns were read by the owner. The date columns of the daily and monthly
+      files and the units of every return column are assumed until the owner's --inspect
+      run prints the headers; a header that differs fails the run and is named.
