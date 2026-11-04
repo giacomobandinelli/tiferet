@@ -1,0 +1,12 @@
+{
+  "id": "2",
+  "name": "USD Coin",
+  "symbol": "USDC",
+  "pegType": "peggedUSD",
+  "tokens": [
+    {"date": 1672185600, "circulating": {"peggedUSD": 44300000000}},
+    {"date": 1672272000, "circulating": {"peggedUSD": 44250000000}},
+    {"date": 1672358400, "circulating": {"peggedUSD": 44200000000}},
+    {"date": 1672444800, "circulating": {"peggedUSD": 44180000000}}
+  ]
+}

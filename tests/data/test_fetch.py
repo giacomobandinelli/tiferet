@@ -147,6 +147,16 @@ def test_requests_to_one_host_are_spaced() -> None:
     assert clock.sleeps == [1.0]
 
 
+def test_a_host_can_have_its_own_interval() -> None:
+    opener, clock = FakeOpener(b"a", b"b", b"c", b"d"), Clock()
+    client = fetcher(opener, clock, min_interval=1.0, host_intervals={"api.example.org": 0.25})
+    client.get(URL)
+    client.get(URL)
+    client.get("https://other.example.org/x")
+    client.get("https://other.example.org/x")
+    assert clock.sleeps == [0.25, 1.0]
+
+
 def test_oversized_response_is_refused() -> None:
     opener, clock = FakeOpener(b"x" * 11), Clock()
     with pytest.raises(FetchError, match="larger than 10 bytes"):
@@ -228,6 +238,15 @@ def test_error_names_fred_error_message_with_the_key_redacted() -> None:
     assert "HTTP 400" in str(error) and "has no ALFRED vintages" in str(error)
     assert "redirects not recorded; final status 400" in str(error)
     assert KEY not in str(error)
+
+
+def test_error_object_is_named_by_type_and_message() -> None:
+    body = json.dumps({"error": {"type": "forbidden", "message": "Not available."}}).encode()
+    opener, clock = FakeOpener(http_error_with_body(403, body)), Clock()
+    with pytest.raises(FetchError) as raised:
+        fetcher(opener, clock).get(URL)
+    assert raised.value.status == 403
+    assert raised.value.detail == "forbidden: Not available."
 
 
 def test_plain_error_text_is_truncated_to_300_characters() -> None:

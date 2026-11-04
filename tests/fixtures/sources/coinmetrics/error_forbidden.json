@@ -1,0 +1,1 @@
+{"error": {"type": "forbidden", "message": "Requested metric 'CapMrktCurUSD' with frequency '1d' for asset 'eth' is not available with supplied credentials."}}

@@ -1,0 +1,14 @@
+{
+  "id": "1",
+  "name": "Tether",
+  "symbol": "USDT",
+  "pegType": "peggedUSD",
+  "tokens": [
+    {"date": 1672012800, "circulating": {"peggedUSD": 66200000000.5}},
+    {"date": 1672099200, "circulating": {"peggedUSD": 66210000000}},
+    {"date": 1672185600, "circulating": {"peggedUSD": 66190000000}},
+    {"date": 1672272000, "circulating": {"peggedUSD": 66230000000}},
+    {"date": 1672358400, "circulating": {"peggedUSD": 66240000000}},
+    {"date": 1672444800, "circulating": {"peggedUSD": 66250000000}}
+  ]
+}

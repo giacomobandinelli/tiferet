@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 NEW_YORK = ZoneInfo("America/New_York")
+UTC = ZoneInfo("UTC")
 END_OF_DAY = time(23, 59, 59)
 TARGET_EXTRA_CLOSING_YEARS = (1999, 2000, 2001)
 """Years in which TARGET was also closed on 31 December."""
@@ -61,6 +62,15 @@ def known_after_lag(
 ) -> pd.Series:
     """23:59:59 in `tz` on the day `lag` days after the end of each observation's period."""
     return end_of_day(plus_days(period_end(obs, frequency), lag), tz)
+
+
+def known_after_utc_day(days: pd.Series, lag_hours: int) -> pd.Series:
+    """00:00 UTC on the day after each UTC day, plus `lag_hours`, as UTC moments."""
+    if lag_hours < 0:
+        raise ValueError(f"a publication lag cannot be negative, got {lag_hours}")
+    moments = days.dt.normalize() + pd.Timedelta(days=1) + pd.Timedelta(hours=lag_hours)
+    stamped: pd.Series = moments.dt.tz_localize(UTC)
+    return stamped
 
 
 def easter_sunday(year: int) -> date:

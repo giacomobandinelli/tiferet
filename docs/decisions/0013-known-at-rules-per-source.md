@@ -101,6 +101,32 @@ Raw files must be ingested without exposing the holdout, and agents must not dow
 - The SPDR workbook's layout, observed by the owner on 2026-11-02, is configured as `spdr.layout`: one sheet "navhist"; label and value rows in columns A and B ("Fund Name:", "ISIN:", "Report Date:", "NAV Currency:"); the header Date, NAV, Shares Outstanding, Total Net Assets; one row per day, newest first, with the date as text "dd-Mon-yyyy" in English month abbreviations (parsed without the locale) and numbers in the other columns; and a footer row starting "Marketing communication". The check is strict: the ISIN must equal the holding's ISIN in `config/holdings.yaml` and the NAV currency the configured one, and an unknown or repeated label, a changed header, another sheet, a date that does not match, a NAV that is not a number, a repeated date, a missing footer or any row after the footer is a format error. Only the NAV series is stored.
 - The Xtrackers EUR overnight holding and the Vanguard euro government bond holding have no NAV adapter (decision 0014).
 
+**Crypto sources** (added 2026-11-04).
+
+- **Coin Metrics Community and DefiLlama:**
+  - A value for UTC day d is known at 00:00 UTC on d + 1 plus `publication_lag_hours`, 24 hours for both sources. Neither source states when daily values are published, so the lag is recorded unverified in `config/sources.yaml` with its reason. Every row is `approximated`.
+  - Coin Metrics revises values in place and DefiLlama's history can change, so each run keeps only the latest download, as for the other full-refresh sources.
+- **Coin Metrics requests:**
+  - There is one request per asset and metric, with `frequency=1d`, `page_size=10000` and `paging_from=start`.
+  - Pages are followed strictly by `next_page_token`. A page that is not a JSON object with a `data` list, an empty or repeated token, or more than 1000 pages is a format error.
+  - Rows are checked for the requested asset, a `time` at 00:00 UTC, the metric's presence, a value that is a decimal string or null (nulls are dropped), and days that are unique and increasing.
+  - Smoke runs stop at 2022-12-31, as for FRED. Requests to the host are spaced by `request_interval_seconds` (0.7 s, against the documented "10 requests per 6 seconds"), and a 429 is retried after its Retry-After.
+- **Coin Metrics missing metrics:**
+  - The API answers a metric the community tier does not serve with HTTP 403 and error type `forbidden`. Its specification says to identify errors by type, not by message. Only that answer marks a metric missing; every other error, such as a 400 `bad_parameter`, stays an error.
+  - The market cap is `CapMrktCurUSD` where it is served, else `PriceUSD × SplyCur` on the days both have a value. An asset with neither has an empty cap series, which ingestion refuses by name.
+- **Coin Metrics `--inspect`:** it reads `/catalog-v2/asset-metrics` per asset and prints, for each configured and probe metric, whether a daily series is listed and flagged `community`. It prints the first date only when it is before 2023; it never prints a later date or a value.
+- **DefiLlama:**
+  - `/stablecoin/{id}` is read for USDT and USDC. The documentation gives no schema, so the keys (`symbol`, the `tokens` history, its `date` in unix seconds and `circulating.peggedUSD`) are configuration, confirmed by the owner's `--inspect` run, which prints keys and counts and never a value.
+  - The answer's symbol must equal the configured one. Each date must be at 00:00 UTC, dates must be unique and increasing, and each amount must be a non-negative number.
+  - The stored value is circulating supply at the $1 peg (decision 0017).
+- **Open Crypto Pricing:**
+  - The factor files are updated weekly on Mondays and the full history may be recomputed at any update. Like the Kenneth French library, it is a history source: a value is known 14 days after the end of its period, at 23:59:59 UTC. That is two update cycles, because the source does not say whether a Monday update includes the week just ended.
+  - The period end is the day itself (daily), `week_end` (weekly) or the month end (monthly).
+  - Only the latest download is kept, so a recomputed value replaces the earlier one under the same rule.
+  - Each file's header must equal its configured date and value columns exactly, in order. The daily and monthly date columns and the return units are assumed until the owner's `--inspect` run, which prints each header, so a differing header fails and is named.
+  - `week_end` must be six days after `week_start`. Counts (`n_coins`) must be non-negative integers. Returns are stored as decimal fractions.
+  - Every row is `approximated`.
+
 **TLS.**
 
 - Every HTTPS download verifies the server's certificate and host name against the operating system's certificate store, through the pinned `truststore` package, instead of the bundled list of the Python installation.

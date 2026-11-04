@@ -1,0 +1,8 @@
+{
+  "data": [
+    {"asset": "btc", "time": "2022-12-27T00:00:00.000000000Z", "PriceUSD": "16700.5"},
+    {"asset": "btc", "time": "2022-12-28T00:00:00.000000000Z", "PriceUSD": "16550.25"}
+  ],
+  "next_page_token": "token-a",
+  "next_page_url": "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?next_page_token=token-a"
+}
